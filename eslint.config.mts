@@ -18,6 +18,8 @@ export default defineConfig(
 		// hold build artifacts, not lint targets.
 		'.tmp',
 		'.dev-vault',
+		// Exploration artifacts (throwaway prototypes kept for reference), not shipped source.
+		'.ai_out',
 		// Playwright/Node e2e harness: the obsidianmd plugin ruleset (mobile-safety,
 		// no `node:` imports, no `window.app as any` bridge) targets shipped plugin
 		// source, not Node-side test tooling that legitimately needs all three.

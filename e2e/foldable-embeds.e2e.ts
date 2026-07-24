@@ -57,9 +57,14 @@ test.afterAll(async () => {
 	await harness?.close();
 });
 
-/** Only embeds the plugin has processed (title loaded + wired). */
+/**
+ * Only embeds the plugin has processed (title loaded + wired), in the READING view.
+ * Scoped to `.markdown-reading-view`: Obsidian keeps the (hidden) Live Preview editor
+ * DOM in the same leaf, and the plugin marks embeds there too — an unscoped selector
+ * would match both and shift every `nth()` index in this suite.
+ */
 function foldableEmbeds(): Locator {
-	return page.locator(`.markdown-embed.${CLS_FOLDABLE}`);
+	return page.locator(`.markdown-reading-view .markdown-embed.${CLS_FOLDABLE}`);
 }
 
 /** textContent of the DOM text node immediately following an embed span. */

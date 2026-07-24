@@ -1,6 +1,6 @@
 # Obsidian foldable embedded notes
 
-Plugin that makes embedded notes (`![[ ]]`) foldable in reading mode, plus a `![[ ]]-` syntax to fold by default.
+Plugin that makes embedded notes (`![[ ]]`) foldable in reading mode and Live Preview, plus a `![[ ]]-` syntax to fold by default.
 
 ## Project overview
 
@@ -8,19 +8,46 @@ Plugin that makes embedded notes (`![[ ]]`) foldable in reading mode, plus a `![
 - Entry point: `src/main.ts` → compiled to `main.js`.
 - Release artifacts (top level of the plugin folder): `main.js`, `manifest.json`, optional `styles.css`.
 
-### Feature architecture (reading-mode foldable embeds)
+### Feature architecture (foldable embeds)
 
-- `src/main.ts` — lifecycle only: registers the markdown post-processor.
-- `src/foldableEmbedsPostProcessor.ts` — per-section post-processor. Note embeds load
-  async, so it waits (MutationObserver, or sync when ready) for `.markdown-embed` + title,
-  then: strict `-` marker parse/strip on the embed span's next text-node sibling, initial
-  fold state (session store wins over marker default), `setIcon` chevron injection, and a
-  title click handler.
-- `src/foldStateStore.ts` — in-memory session fold state (`Map`, no persistence).
+Two independent implementations — one per render mode — over one shared DOM contract.
+They deliberately share NO readiness logic, fold-state identity or marker parsing;
+those genuinely differ per mode.
+
+- `src/main.ts` — lifecycle only: registers the markdown post-processor and the editor
+  extension.
+- `src/embedFoldDom.ts` — the shared DOM contract used by BOTH modes: the class names that
+  must match `styles.css`, chevron injection, fold-class application, the title-click
+  handler (which must swallow Obsidian's own "open the embed" behaviour), and `unmark`
+  (the inverse, for teardown).
+- `src/foldStateStore.ts` — in-memory session fold state for reading mode (`Map`, no
+  persistence).
+- `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note
+  embeds load async, so it waits (MutationObserver, or sync when ready) for
+  `.markdown-embed` + title, then: strict `-` marker parse/strip on the embed span's next
+  text-node sibling, initial fold state (session store wins over marker default), and DOM
+  wiring via `EmbedFoldDom`.
+- `src/livePreview/` — LIVE PREVIEW, a CM6 editor extension:
+  - `markedEmbedLines.ts` — whole-line `![[x]]-` scan (cached in a StateField) + the
+    decoration hiding the marker dash, gated on `editorLivePreviewField` so plain Source
+    mode stays verbatim.
+  - `foldStateField.ts` — explicit fold state as a `RangeSet` (positions map through
+    edits) + `effectiveFold`: an explicit choice beats the marker default.
+  - `livePreviewFoldExtension.ts` — ViewPlugin projecting that state onto Obsidian's embed
+    widgets, driven by a `contentDOM` MutationObserver (embeds render async, outside CM's
+    update cycle), plus the teardown that removes everything injected.
+- Live Preview constraints worth knowing before changing it: `posAtDOM` on a widget is only
+  LINE-accurate, so fold state is anchored and read back per LINE (embeds sharing a line
+  fold together); it THROWS (never returns a sentinel) for a node CM cannot map. Only
+  TOP-LEVEL embeds are wired — a nested one resolves to its parent's line, and it is the
+  post-processor's business anyway. The widget DOM is Obsidian's and is REUSED across
+  edits, so every injection needs a matching removal in `destroy()`.
 - `styles.css` — collapse (`.fen-folded`), forced-visible title bar, chevron rotation. All
-  fold state is class-driven (no inline styles / no runtime `<style>`).
+  fold state is class-driven (no inline styles / no runtime `<style>`). Shared by both modes.
 - eslint scopes the obsidianmd plugin ruleset to `src/`; `e2e/` (Node/Playwright harness) and
   build-artifact dirs (`.tmp`, `.dev-vault`) are ignored.
+- `@codemirror/state` / `@codemirror/view` are devDependencies pinned to obsidian's peer
+  versions: externalised at bundle time, provided by Obsidian at runtime — never runtime deps.
 
 ## Tooling & commands
 

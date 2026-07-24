@@ -1,23 +1,9 @@
-import { MarkdownPostProcessorContext, setIcon } from "obsidian";
+import { MarkdownPostProcessorContext } from "obsidian";
+import { EmbedFoldDom } from "./embedFoldDom";
 import { FoldStateStore } from "./foldStateStore";
 
-/** Marks an embed span the plugin has made foldable (also the CSS hook for a forced-visible title). */
-const CLS_FOLDABLE = "fen-embed";
-/** Toggled on the embed span to collapse its body (CSS hides `.markdown-embed-content`). */
-const CLS_FOLDED = "fen-folded";
-/** The injected chevron span inside the title bar. */
-const CLS_CHEVRON = "fen-collapse-icon";
-/** Core-callout convention: present while collapsed; drives the chevron rotation in CSS. */
-const CLS_COLLAPSED = "is-collapsed";
-
-/** Obsidian's built-in collapse triangle, same glyph core callouts use. */
-const CHEVRON_ICON = "right-triangle";
 /** Single fold marker character; `![[x]]-` folds by default. */
 const FOLD_MARKER = "-";
-
-const SEL_INTERNAL_EMBED = ".internal-embed";
-const CLS_MARKDOWN_EMBED = "markdown-embed";
-const SEL_EMBED_TITLE = ".markdown-embed-title";
 
 /** Classes Obsidian puts on non-note embeds (images/pdf/media) — these are never foldable. */
 const MEDIA_EMBED_CLASSES = ["media-embed", "image-embed", "video-embed", "audio-embed", "pdf-embed"];
@@ -48,7 +34,7 @@ export class FoldableEmbedsPostProcessor {
 	}
 
 	readonly process = (el: HTMLElement, ctx: MarkdownPostProcessorContext): void => {
-		const embeds = Array.from(el.querySelectorAll<HTMLElement>(SEL_INTERNAL_EMBED));
+		const embeds = Array.from(el.querySelectorAll<HTMLElement>(EmbedFoldDom.SEL_INTERNAL_EMBED));
 		embeds.forEach((embed, indexWithinSection) => {
 			this.whenMarkdownEmbedReady(embed, (title) =>
 				this.makeFoldable(embed, title, ctx, el, indexWithinSection),
@@ -64,33 +50,25 @@ export class FoldableEmbedsPostProcessor {
 		indexWithinSection: number,
 	): void {
 		// Guard against a second post-process pass over the same live DOM.
-		if (embed.classList.contains(CLS_FOLDABLE)) {
+		if (embed.classList.contains(EmbedFoldDom.CLS_FOLDABLE)) {
 			return;
 		}
 		const foldedByDefault = this.stripFoldMarker(embed);
 		const key = this.buildKey(embed, ctx, sectionEl, indexWithinSection);
 		const folded = this.store.get(key) ?? foldedByDefault;
 
-		embed.classList.add(CLS_FOLDABLE);
-		const chevron = title.createSpan({ cls: CLS_CHEVRON, prepend: true });
-		setIcon(chevron, CHEVRON_ICON);
-		this.applyFoldState(embed, chevron, folded);
+		EmbedFoldDom.markFoldable(embed);
+		const chevron = EmbedFoldDom.ensureChevron(title);
+		EmbedFoldDom.applyFoldState(embed, chevron, folded);
 
-		// Listener lives and dies with this freshly-created title element, so it
-		// needs no explicit deregistration. preventDefault/stopPropagation suppress
-		// Obsidian's own "open the embedded note" click behaviour on the title.
-		title.addEventListener("click", (event) => {
-			event.preventDefault();
-			event.stopPropagation();
-			const nowFolded = !embed.classList.contains(CLS_FOLDED);
-			this.applyFoldState(embed, chevron, nowFolded);
+		// The listener lives and dies with this freshly-created title element, so it
+		// needs no explicit deregistration (unlike Live Preview's, whose title DOM is
+		// Obsidian's and survives unload).
+		EmbedFoldDom.onTitleClick(title, () => {
+			const nowFolded = !embed.classList.contains(EmbedFoldDom.CLS_FOLDED);
+			EmbedFoldDom.applyFoldState(embed, chevron, nowFolded);
 			this.store.set(key, nowFolded);
 		});
-	}
-
-	private applyFoldState(embed: HTMLElement, chevron: HTMLElement, folded: boolean): void {
-		embed.classList.toggle(CLS_FOLDED, folded);
-		chevron.classList.toggle(CLS_COLLAPSED, folded);
 	}
 
 	/**
@@ -154,7 +132,7 @@ export class FoldableEmbedsPostProcessor {
 	}
 
 	private whenMarkdownEmbedReady(embed: HTMLElement, onReady: OnTitleReady): void {
-		if (embed.classList.contains(CLS_FOLDABLE)) {
+		if (embed.classList.contains(EmbedFoldDom.CLS_FOLDABLE)) {
 			return;
 		}
 		const readyTitle = this.markdownEmbedTitle(embed);
@@ -189,10 +167,10 @@ export class FoldableEmbedsPostProcessor {
 
 	/** The title bar, but only once this embed is a resolved markdown (note) embed. */
 	private markdownEmbedTitle(embed: HTMLElement): HTMLElement | null {
-		if (!embed.classList.contains(CLS_MARKDOWN_EMBED)) {
+		if (!embed.classList.contains(EmbedFoldDom.CLS_MARKDOWN_EMBED)) {
 			return null;
 		}
-		return embed.querySelector<HTMLElement>(SEL_EMBED_TITLE);
+		return embed.querySelector<HTMLElement>(EmbedFoldDom.SEL_EMBED_TITLE);
 	}
 
 	private isMediaEmbed(embed: HTMLElement): boolean {
