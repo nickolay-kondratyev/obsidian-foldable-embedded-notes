@@ -1,11 +1,12 @@
 ---
+closed_iso: 2026-07-24T18:47:16Z
 id: nid_66x3rkvxdjjaddrtm9u0v72ah_e
 title: "Reading-mode foldable embeds with ![[x]]- fold-by-default syntax"
-status: open
+status: closed
 deps: []
 links: []
 created_iso: 2026-07-24T17:59:47Z
-status_updated_iso: 2026-07-24T17:59:47Z
+status_updated_iso: 2026-07-24T18:47:16Z
 type: feature
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
