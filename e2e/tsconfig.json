@@ -1,0 +1,13 @@
+{
+	"extends": "../tsconfig.json",
+	"compilerOptions": {
+		// e2e runs under node (Playwright transpiles); no JSX, no DOM-global
+		// assumptions beyond what page.evaluate callbacks need (lib DOM should
+		// come from the root config and matches the renderer they execute in).
+		"types": ["node"],
+		// Type-check only: Playwright transpiles the specs itself, so tsc must
+		// not litter e2e/ with emitted .js artifacts.
+		"noEmit": true
+	},
+	"include": ["./**/*.ts"]
+}

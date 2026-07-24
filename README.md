@@ -1,42 +1,81 @@
-# Obsidian Sample Plugin
+# Foldable Embedded Notes
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Make embedded notes (`![[ ]]`) foldable in reading mode.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+Use the `![[ ]]-` syntax to fold an embedded note by default.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
+> Note: this repository currently contains a minimal, working plugin skeleton. The
+> foldable-embedding feature described above is the plugin's intended purpose and is
+> not implemented yet.
 
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and outputs a Notice on click.
-- Registers a global interval which logs 'setInterval' to the console.
+## Development
 
-## First time developing plugins?
+This project uses TypeScript to provide type checking and documentation. It depends on
+the latest plugin API (`obsidian.d.ts`) in TypeScript Definition format.
 
-Quick starting guide for new plugin devs:
+- Make sure your NodeJS is at least v18 (`node --version`).
+- `npm install` to install dependencies.
+- `npm run dev` to compile `src/main.ts` to `main.js` in watch mode.
+- `npm run build` to produce a production build.
+- Reload Obsidian to load the new version of the plugin.
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `src/main.ts` to `main.js`.
-- Make changes to `src/main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+## E2E testing
+
+The e2e suite drives a **real Obsidian (Electron)** under Playwright: it boots a
+throwaway copy of a seeded dev vault with the built plugin installed and asserts
+the plugin actually loads. It runs headless in Docker/CI (auto-downloading a
+pinned Obsidian) and on a real machine.
+
+```bash
+npm run test:e2e                              # run the whole suite
+npm run test:e2e -- hello-world.e2e.ts        # run a single spec
+OBSIDIAN_PATH='/Applications/Obsidian.app/Contents/MacOS/Obsidian' npm run test:e2e   # use an already-installed Obsidian
+```
+
+On Linux the runner auto-downloads and caches a pinned Obsidian build the first
+time; you can also pre-provision it with `npm run setup:obsidian`. On a
+display-less machine it automatically switches Obsidian to headless flags.
+
+Environment variables:
+
+- `OBSIDIAN_PATH` — path to an Obsidian binary. When set, it is used as-is (no
+  download). Required on macOS/Windows (no auto-download there).
+- `OBSIDIAN_E2E_EXTRA_ARGS` — extra space-separated Chromium/Electron flags. An
+  explicit value always wins over the auto headless default.
+- `OBSIDIAN_CACHE_DIR` — where the downloaded Obsidian is cached (default
+  `~/.cache/obsidian-e2e`); share it across checkouts / mount it in Docker.
+
+The e2e suite is intentionally NOT part of `npm test`; it is a release gate.
+
+## Improve code quality with eslint
+
+- [ESLint](https://eslint.org/) analyzes your code to quickly find problems.
+- This project has eslint preconfigured, together with a custom eslint
+  [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidian-specific guidelines.
+- Run a check with `npm run lint`.
+- A GitHub action is preconfigured to automatically lint every commit on all branches.
 
 ## Releasing new releases
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
+- Update `manifest.json` with your new version number and the minimum Obsidian version
+  required for the release.
+- Update `versions.json` with `"new-plugin-version": "minimum-obsidian-version"` so older
+  versions of Obsidian can download a compatible version of the plugin.
+- Create a new GitHub release using your new version number as the "Tag version". Use the
+  exact version number, without a leading `v`.
+- Upload `manifest.json`, `main.js`, and `styles.css` (if present) as binary attachments.
+  The `manifest.json` must be both at the root of the repository and in the release.
 - Publish the release.
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+> You can simplify the version bump process by running `npm version patch`, `npm version
+> minor`, or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
+> The command bumps the version in `manifest.json` and `package.json`, and adds the entry
+> for the new version to `versions.json`.
+
+## Manually installing the plugin
+
+- Copy `main.js`, `styles.css` (if present), and `manifest.json` to your vault at
+  `VaultFolder/.obsidian/plugins/foldable-embedded-notes/`.
 
 ## Adding your plugin to the community plugin list
 
@@ -44,48 +83,6 @@ Quick starting guide for new plugin devs:
 - Publish an initial version.
 - Make sure you have a `README.md` file in the root of your repo.
 - Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v18 (`node --version`).
-- `npm i` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code.
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-	"fundingUrl": "https://buymeacoffee.com"
-}
-```
-
-If you have multiple URLs, you can also do:
-
-```json
-{
-	"fundingUrl": {
-		"Buy Me a Coffee": "https://buymeacoffee.com",
-		"GitHub Sponsor": "https://github.com/sponsors",
-		"Patreon": "https://www.patreon.com/"
-	}
-}
-```
 
 ## API Documentation
 
