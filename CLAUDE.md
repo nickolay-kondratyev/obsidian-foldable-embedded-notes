@@ -56,6 +56,9 @@ Follow Obsidian's Developer Policies and Plugin Guidelines:
 
 - Manual: copy `main.js`, `manifest.json`, `styles.css` to `<Vault>/.obsidian/plugins/<plugin-id>/`, reload Obsidian, enable in **Settings → Community plugins**.
 
+### e2e testing
+See ./e2e for more info.
+
 ## References
 
 - Sample plugin: https://github.com/obsidianmd/obsidian-sample-plugin
