@@ -21,7 +21,12 @@
 	display: none;
 }
 
-/* Rotating collapse chevron, consistent with core callout `is-collapsed`. */
+/*
+ * Rotating collapse chevron, matching core's `.collapse-icon` convention.
+ * Obsidian's `right-triangle` glyph points DOWN at rest (path `M3 8L12 17L21 8`),
+ * so expanded needs no rotation and collapsed rotates -90deg to point right —
+ * the same transform core applies to `.collapse-icon.is-collapsed`.
+ */
 .fen-collapse-icon {
 	display: inline-flex;
 	align-items: center;
@@ -30,9 +35,9 @@
 
 .fen-collapse-icon svg {
 	transition: transform 100ms ease-in-out;
-	transform: rotate(90deg); /* expanded: pointing down */
+	/* expanded: glyph at rest, pointing down ▼ */
 }
 
 .fen-collapse-icon.is-collapsed svg {
-	transform: rotate(0deg); /* collapsed: pointing right */
+	transform: rotate(-90deg); /* collapsed: pointing right ▶ */
 }
