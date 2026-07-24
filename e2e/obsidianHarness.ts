@@ -67,6 +67,12 @@ const WINDOW_HEIGHT_PX = 800;
 const WORKSPACE_READY_TIMEOUT_MS = 60_000;
 const PLUGIN_READY_TIMEOUT_MS = 30_000;
 
+/** 0-based editor position, matching Obsidian's own `EditorPosition`. */
+export interface EditorPosition {
+	readonly line: number;
+	readonly ch: number;
+}
+
 export class ObsidianHarness {
 	private constructor(
 		private readonly browser: Browser,
@@ -221,6 +227,77 @@ export class ObsidianHarness {
 				state: { ...viewState.state, mode: targetMode },
 			});
 		}, mode);
+	}
+
+	/**
+	 * Chooses the flavour of EDITING mode: Live Preview (embeds/markup rendered) or
+	 * plain Source mode (raw markdown). Reading mode is orthogonal — see
+	 * {@link setMarkdownViewMode}.
+	 *
+	 * Sets BOTH levers, which are genuinely different things:
+	 * - the ACTIVE leaf's view state (`state.source`), the only one an already-open
+	 *   editor reacts to. Verified against Obsidian 1.12.7: setting the vault config
+	 *   alone leaves an open view on `.markdown-source-view.is-live-preview` even
+	 *   after a reading↔editing round-trip and `workspace.updateOptions()`.
+	 * - the vault-wide `livePreview` config, which is what views created LATER read.
+	 */
+	async setLivePreviewEnabled(enabled: boolean): Promise<void> {
+		await this.page.evaluate(async (livePreview) => {
+			const app = (window as unknown as { app: any }).app;
+			app.vault.setConfig("livePreview", livePreview);
+			const leaf = app.workspace.getMostRecentLeaf();
+			const viewState = leaf.getViewState();
+			await leaf.setViewState({
+				...viewState,
+				state: { ...viewState.state, source: !livePreview },
+			});
+		}, enabled);
+	}
+
+	/** Places the editor cursor (0-based line/ch) in the active markdown editor. */
+	async setCursor(line: number, ch: number): Promise<void> {
+		await this.page.evaluate((position) => {
+			const app = (window as unknown as { app: any }).app;
+			app.workspace.getMostRecentLeaf().view.editor.setCursor(position);
+		}, { line, ch });
+	}
+
+	/**
+	 * Obsidian's `editor.replaceRange` in the active markdown editor: inserts `text`
+	 * at `from`, or replaces `from`..`to` with it when `to` is given (pass `""` to
+	 * delete). Positions are 0-based.
+	 */
+	async replaceRange(text: string, from: EditorPosition, to?: EditorPosition): Promise<void> {
+		await this.page.evaluate((edit) => {
+			const app = (window as unknown as { app: any }).app;
+			app.workspace.getMostRecentLeaf().view.editor.replaceRange(edit.text, edit.from, edit.to);
+		}, { text, from, to });
+	}
+
+	/**
+	 * Turns the plugin off/on in a running Obsidian — the real unload/load path (plugin
+	 * update, "Reload app without saving", dev iteration) that plugin-injected DOM has to
+	 * survive.
+	 *
+	 * WHY the two halves are separately callable (rather than one `reloadPlugin`): the
+	 * only falsifiable teardown assertion is the one made WHILE the plugin is off, before
+	 * anything rebuilds the DOM.
+	 */
+	async setPluginEnabled(enabled: boolean): Promise<void> {
+		await this.page.evaluate(
+			async (options) => {
+				const app = (window as unknown as { app: any }).app;
+				const plugins = app.plugins;
+				await (options.enabled ? plugins.enablePlugin(options.pluginId) : plugins.disablePlugin(options.pluginId));
+			},
+			{ pluginId: PLUGIN_ID, enabled },
+		);
+		await this.page.waitForFunction(
+			(options) =>
+				Boolean((window as unknown as { app: any }).app.plugins.plugins[options.pluginId]) === options.enabled,
+			{ pluginId: PLUGIN_ID, enabled },
+			{ timeout: PLUGIN_READY_TIMEOUT_MS },
+		);
 	}
 
 	/** Forces the given Obsidian theme by body class (how Obsidian itself switches). */

@@ -1,20 +1,35 @@
 # Foldable Embedded Notes
 
-Make embedded notes (`![[ ]]`) foldable in **reading mode**: each note embed gets a
-clickable title bar with a rotating collapse chevron. Click the title to fold/unfold.
+Make embedded notes (`![[ ]]`) foldable in **reading mode and Live Preview**: each note
+embed gets a clickable title bar with a rotating collapse chevron. Click the title to
+fold/unfold.
 
-Use the `![[ ]]-` syntax to fold an embedded note **by default**. The trailing `-` is a
-fold marker only when it comes immediately after `]]` and is followed by whitespace or the
-end of the line, so `![[note]]-like` keeps its literal dash. The marker itself is never
-rendered.
+Use the `![[ ]]-` syntax to fold an embedded note **by default**. In reading mode the
+trailing `-` is a fold marker only when it comes immediately after `]]` and is followed by
+whitespace or the end of the line, so `![[note]]-like` keeps its literal dash. The marker
+itself is never rendered.
 
-Fold state is remembered for the current session (it survives re-renders and mode switches,
-and resets when Obsidian restarts); once you toggle an embed, your choice overrides the
-`-` default.
+Fold state is remembered for the current session and resets when Obsidian restarts; once
+you toggle an embed, your choice overrides the `-` default. Each mode keeps its own state
+(see the limitations below): in reading mode it survives re-renders and reading↔editing
+round-trips, in Live Preview it follows the embed as you edit the note around it.
 
-> Limitations: reading mode only. In Live Preview / editing mode the `-` shows literally and
-> embeds are not foldable (follow-up work). Only note embeds are foldable — image/PDF/media
-> embeds are untouched.
+> Limitations:
+>
+> - **The `-` marker in Live Preview applies only to whole-line embeds** — the line must be
+>   nothing but `![[note]]-`. A mid-paragraph `text ![[note]]- text` keeps its literal dash
+>   there and is not folded by default (reading mode still handles it). In the editor the
+>   plugin only sees raw text, which cannot tell a real embed from one written inside a
+>   code span; a whole-line match can't be inside one, so that is the rule it can apply
+>   safely. Such embeds are still click-foldable.
+> - **Fold state is per mode and per session.** Folding in Live Preview does not carry over
+>   to reading mode or vice versa, and both reset when Obsidian restarts. In Live Preview it
+>   is tracked per LINE, so two embeds written on the same line fold together.
+> - Only note embeds are foldable — image/PDF/media embeds are untouched.
+> - An embed nested inside another embed's body is foldable in both modes, but it is always
+>   handled by the reading-mode path — in Live Preview its fold state is not tracked per
+>   editor line, and folding it never folds the embed it sits in.
+> - Plain **Source mode** is left completely alone: raw markdown, dash included.
 
 ## Development
 
