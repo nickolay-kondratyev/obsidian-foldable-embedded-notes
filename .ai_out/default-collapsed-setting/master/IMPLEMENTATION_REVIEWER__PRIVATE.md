@@ -1,7 +1,10 @@
 # IMPLEMENTATION_REVIEWER__PRIVATE — default-collapsed setting
 
-Memory for a future clone of this role. Reviewed `3f21c9d` vs `5efa23b`. Verdict: NOT-READY
-(2 BLOCKING). Public output: `IMPLEMENTATION_REVIEW__PUBLIC.md`.
+Memory for a future clone of this role. Public output: `IMPLEMENTATION_REVIEW__PUBLIC.md`.
+
+- **Iteration 0** — reviewed `3f21c9d` vs `5efa23b`. Verdict NOT-READY (2 BLOCKING).
+- **Iteration 1** — reviewed `8d1caf9` vs `3f21c9d` (fresh clone). Verdict **READY**. See the
+  section at the bottom of this file; everything above it is iteration-0 memory and still accurate.
 
 ## State at exit
 - Working tree CLEAN, my two `.ai_out/...` files committed. `src/` and `e2e/` untouched by me.
@@ -61,3 +64,47 @@ Memory for a future clone of this role. Reviewed `3f21c9d` vs `5efa23b`. Verdict
 - No scope creep: no `Compartment`, no `+` marker, no live re-application, no unit runner.
 - `main.ts` still lifecycle-only; zero `any` in `src/`; defaults typed exactly once.
 - `obsidian-settings` skill checklist: fully compliant for a single-row tab.
+
+---
+
+## ITERATION 1 (`8d1caf9`) — verdict READY
+
+### State at exit
+- Working tree CLEAN. Only my two `.ai_out/...` files committed. `src/` and `e2e/` untouched
+  (two temporary mutations, both `git checkout --`'d and verified).
+- My logs (gitignored `.tmp/`): `rev2-lint.log`, `rev2-build.log`, `rev2-e2e-full.log`,
+  `rev2-e2e-mutant-b1.log`, `rev2-e2e-mutant-b2.log`, `rev2-e2e-restored.log`.
+
+### What I actually did (the method that works — reuse it)
+Do NOT read the implementer's falsifiability table and nod. Re-apply the mutants yourself; it
+costs ~35 s per spec run. Both mutants are one-liners:
+- B1: `livePreviewFoldExtension.ts:98` `!EmbedFoldDom.isFolded(embed)` →
+  `!effectiveFold(this.view.state, lineFrom, this.readSettings())` ⇒ test `:209` RED (9 passed).
+- B2: delete `await this.persistence.saveData(this.current)` from
+  `foldableEmbedsSettingsStore.ts` ⇒ test `:202` RED (8 passed). This is the SAME mutant that
+  survived in iteration 0 — that is the proof the gap is closed, not just papered over.
+Both restored ⇒ full suite 34/34.
+
+### Gates (all reproduce the implementer's claims — again, no dishonesty in the numbers)
+lint exit 0 / 0 errors / 1 unchanged ticketed warning; build exit 0; e2e exit 0, **34 passed**
+(~5 s). `package.json` untouched ⇒ no unit runner smuggled in.
+
+### Judgement calls (iteration 1)
+- Accepted the B1 fix as ROOT, not a patch: the operand question ("what should render" vs
+  "what the user is looking at") is genuinely the bug, and lifting it into
+  `EmbedFoldDom.isFolded` made reading mode and Live Preview share the one named predicate.
+  Do not re-litigate this into "state must always be the operand" — it must not.
+- Did NOT block on two residuals, and said so explicitly in the public file: (a) the
+  `parseSettings` non-boolean branch is untested, (b) test `:209` could go vacuous if a future
+  Obsidian re-syncs the pane between the flip and the click. Both are follow-up material, not
+  ship-blockers — I proved `:209` falsifiable TODAY, which is the standard that applies.
+- Noted but did not flag: `parseSettings` drops unknown `data.json` keys where the old spread
+  kept them. Harmless at one setting; remember it if a downgrade path ever matters.
+- The declined unit test for `parseSettings` is a correct 80/20 call (no runner in repo,
+  pre-existing ticket). Do not push it.
+
+### Trap to avoid if a future iteration touches `toggle()`
+The click listener is wired BEFORE `applyFoldState` inside the same `sync()` iteration
+(`livePreviewFoldExtension.ts:65-83`), which is what makes "invert the DOM class" safe — no click
+can reach an element the plugin has not projected onto yet. If anyone reorders `sync()`, that
+safety argument dies and B1 comes back in the mirror direction.
