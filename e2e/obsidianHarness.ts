@@ -205,6 +205,24 @@ export class ObsidianHarness {
 		}
 	}
 
+	/**
+	 * Switches the active main-area markdown leaf to reading ("preview") or
+	 * editing ("source") mode by patching its view state — the load-bearing bit is
+	 * `state.mode`. Used to exercise the reading-mode-only foldable-embed feature
+	 * and to prove fold state survives a mode round-trip.
+	 */
+	async setMarkdownViewMode(mode: "preview" | "source"): Promise<void> {
+		await this.page.evaluate(async (targetMode) => {
+			const app = (window as unknown as { app: any }).app;
+			const leaf = app.workspace.getLeaf(false);
+			const viewState = leaf.getViewState();
+			await leaf.setViewState({
+				...viewState,
+				state: { ...viewState.state, mode: targetMode },
+			});
+		}, mode);
+	}
+
 	/** Forces the given Obsidian theme by body class (how Obsidian itself switches). */
 	async setTheme(theme: "dark" | "light"): Promise<void> {
 		await this.page.evaluate((mode) => {

@@ -1,12 +1,20 @@
 # Foldable Embedded Notes
 
-Make embedded notes (`![[ ]]`) foldable in reading mode.
+Make embedded notes (`![[ ]]`) foldable in **reading mode**: each note embed gets a
+clickable title bar with a rotating collapse chevron. Click the title to fold/unfold.
 
-Use the `![[ ]]-` syntax to fold an embedded note by default.
+Use the `![[ ]]-` syntax to fold an embedded note **by default**. The trailing `-` is a
+fold marker only when it comes immediately after `]]` and is followed by whitespace or the
+end of the line, so `![[note]]-like` keeps its literal dash. The marker itself is never
+rendered.
 
-> Note: this repository currently contains a minimal, working plugin skeleton. The
-> foldable-embedding feature described above is the plugin's intended purpose and is
-> not implemented yet.
+Fold state is remembered for the current session (it survives re-renders and mode switches,
+and resets when Obsidian restarts); once you toggle an embed, your choice overrides the
+`-` default.
+
+> Limitations: reading mode only. In Live Preview / editing mode the `-` shows literally and
+> embeds are not foldable (follow-up work). Only note embeds are foldable — image/PDF/media
+> embeds are untouched.
 
 ## Development
 

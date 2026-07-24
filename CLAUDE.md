@@ -8,6 +8,20 @@ Plugin that makes embedded notes (`![[ ]]`) foldable in reading mode, plus a `![
 - Entry point: `src/main.ts` → compiled to `main.js`.
 - Release artifacts (top level of the plugin folder): `main.js`, `manifest.json`, optional `styles.css`.
 
+### Feature architecture (reading-mode foldable embeds)
+
+- `src/main.ts` — lifecycle only: registers the markdown post-processor.
+- `src/foldableEmbedsPostProcessor.ts` — per-section post-processor. Note embeds load
+  async, so it waits (MutationObserver, or sync when ready) for `.markdown-embed` + title,
+  then: strict `-` marker parse/strip on the embed span's next text-node sibling, initial
+  fold state (session store wins over marker default), `setIcon` chevron injection, and a
+  title click handler.
+- `src/foldStateStore.ts` — in-memory session fold state (`Map`, no persistence).
+- `styles.css` — collapse (`.fen-folded`), forced-visible title bar, chevron rotation. All
+  fold state is class-driven (no inline styles / no runtime `<style>`).
+- eslint scopes the obsidianmd plugin ruleset to `src/`; `e2e/` (Node/Playwright harness) and
+  build-artifact dirs (`.tmp`, `.dev-vault`) are ignored.
+
 ## Tooling & commands
 
 - npm + esbuild (`esbuild.config.mjs`); `obsidian` type definitions.

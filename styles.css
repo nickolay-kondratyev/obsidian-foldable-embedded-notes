@@ -1,8 +1,38 @@
 /*
+ * Foldable reading-mode embeds. Behaviour lives in
+ * src/foldableEmbedsPostProcessor.ts; this file is CSS-only (no runtime <style>
+ * injection, no inline styles — collapse is driven entirely by class toggles).
+ */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+/* Keep the embed title bar visible + clickable even when a theme hides it. */
+.fen-embed > .markdown-embed-title {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1, 4px);
+	cursor: pointer;
+}
 
-If your plugin does not need CSS, delete this file.
+/*
+ * Collapse the embedded note body when folded. A note embed contains TWO
+ * `.markdown-embed-content` children (one populated, one empty+hidden); hiding
+ * both cleanly collapses the whole body to the title bar.
+ */
+.fen-folded > .markdown-embed-content {
+	display: none;
+}
 
-*/
+/* Rotating collapse chevron, consistent with core callout `is-collapsed`. */
+.fen-collapse-icon {
+	display: inline-flex;
+	align-items: center;
+	color: var(--text-muted);
+}
+
+.fen-collapse-icon svg {
+	transition: transform 100ms ease-in-out;
+	transform: rotate(90deg); /* expanded: pointing down */
+}
+
+.fen-collapse-icon.is-collapsed svg {
+	transform: rotate(0deg); /* collapsed: pointing right */
+}
