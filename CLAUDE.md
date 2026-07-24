@@ -28,9 +28,11 @@ those genuinely differ per mode.
     lands on the NEXT render (reopen / mode switch / edit). Deliberately no CM6
     `Compartment` and no forced rerender of open panes.
 - `src/embedFoldDom.ts` — the shared DOM contract used by BOTH modes: the class names that
-  must match `styles.css`, chevron injection, fold-class application, the title-click
-  handler (which must swallow Obsidian's own "open the embed" behaviour), and `unmark`
-  (the inverse, for teardown).
+  must match `styles.css`, chevron injection, fold-class application, `isFolded` (what is
+  currently DISPLAYED — the operand both modes' title clicks invert, so a click always does
+  what the user just saw it should do even when the projection lags the computed default),
+  the title-click handler (which must swallow Obsidian's own "open the embed" behaviour),
+  and `unmark` (the inverse, for teardown).
 - `src/foldStateStore.ts` — in-memory session fold state for reading mode (`Map`, no
   persistence).
 - `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note

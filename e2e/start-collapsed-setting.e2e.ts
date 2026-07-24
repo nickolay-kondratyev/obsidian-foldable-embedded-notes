@@ -8,9 +8,14 @@ import { ObsidianHarness, PLUGIN_ID } from "./obsidianHarness";
  * The suite starts with the setting SEEDED ON in `data.json` (the default is OFF, so
  * every "starts folded" assertion below is falsifiable: with the setting ignored these
  * plain `![[child]]` embeds would render expanded, exactly as the other two specs assert).
- * It then turns the setting OFF through the real settings dialog, back ON, and restarts
- * Obsidian — the only way to prove the tab writes through to `data.json` and that the
- * value is read back at load.
+ * It then turns the setting OFF through the real settings dialog and back ON.
+ *
+ * Two DIFFERENT properties are asserted about persistence, because one does not imply
+ * the other:
+ * - the tab WRITES: `data.json` on disk is read back from Node and must hold the value
+ *   just chosen. This is what fails if `saveData` is never called — asserting a
+ *   post-restart behaviour cannot, since the seeded file already says what we want.
+ * - the plugin READS at load: after a real Obsidian restart the setting still applies.
  *
  * Serial, ONE Obsidian per file (plus one relaunch), no fixed sleeps.
  */
@@ -82,6 +87,28 @@ function startCollapsedToggle(): Locator {
 	return page.locator(".setting-item", { hasText: SETTING_NAME }).locator(".checkbox-container");
 }
 
+async function expectFolded(embed: Locator, folded: boolean): Promise<void> {
+	if (folded) {
+		await expect(embed).toHaveClass(FOLDED_RE);
+		return;
+	}
+	await expect(embed).not.toHaveClass(FOLDED_RE);
+}
+
+function isFoldedNow(embed: Locator): Promise<boolean> {
+	return embed.evaluate((node, cls) => node.classList.contains(cls), CLS_FOLDED);
+}
+
+/**
+ * Waits for the plugin to have WRITTEN this value to `data.json`. Polls because the save
+ * is an unawaited consequence of the toggle click, not something the UI reports.
+ */
+async function expectPersistedStartCollapsed(startCollapsed: boolean): Promise<void> {
+	await expect
+		.poll(() => ObsidianHarness.readPersistedPluginData())
+		.toMatchObject({ startCollapsed });
+}
+
 async function expectToggleState(toggle: Locator, enabled: boolean): Promise<void> {
 	if (enabled) {
 		await expect(toggle).toHaveClass(TOGGLE_ENABLED_RE);
@@ -104,22 +131,35 @@ async function setStartCollapsedInSettings(enabled: boolean): Promise<void> {
 test("reading mode: a plain `![[child]]` starts folded when the setting is on", async () => {
 	await openInReadingMode(NOTE_A_PATH);
 	const unmarked = readingEmbeds().nth(EMBED_UNMARKED);
-	await expect(unmarked).toHaveClass(FOLDED_RE);
+	await expectFolded(unmarked, true);
 	// Prove the body is really collapsed, not just that a class landed.
 	await expect(unmarked.locator(".markdown-embed-content").first()).toBeHidden();
+});
+
+test("reading mode: a `![[child]]-` is folded too while the setting is on", async () => {
+	// Truth-table row 4: the marker is redundant, never contradictory.
+	await expectFolded(readingEmbeds().nth(EMBED_MARKED), true);
 });
 
 test("reading mode: the marker dash is still stripped while the setting is on", async () => {
 	// The setting makes `-` a no-op for FOLDING, and nothing more: the marker must still
 	// be parsed away, or it would start rendering as literal text.
-	const trailingText = await readingEmbeds().nth(EMBED_MARKED).evaluate((node) => node.nextSibling?.textContent ?? "");
+	//
+	// The sibling's EXISTENCE is asserted separately on purpose: `?? ""` would report the
+	// same empty string when the dash was stripped and when there is no sibling to strip
+	// it from, so the day Obsidian changes how it wraps the paragraph this assertion would
+	// silently stop being able to fail.
+	const trailingText = await readingEmbeds()
+		.nth(EMBED_MARKED)
+		.evaluate((node) => node.nextSibling?.textContent ?? null);
+	expect(trailingText).not.toBeNull();
 	expect(trailingText).not.toMatch(/^-/);
 });
 
 test("reading mode: an explicit unfold beats the setting, across a re-render", async () => {
 	const unmarked = readingEmbeds().nth(EMBED_UNMARKED);
 	await unmarked.locator(".markdown-embed-title").click();
-	await expect(unmarked).not.toHaveClass(FOLDED_RE);
+	await expectFolded(unmarked, false);
 
 	await harness.setMarkdownViewMode("source");
 	await harness.setMarkdownViewMode("preview");
@@ -127,13 +167,13 @@ test("reading mode: an explicit unfold beats the setting, across a re-render", a
 	// Re-rendered from scratch: the session store's explicit choice must still win over
 	// the setting's "start collapsed" default.
 	await expect(readingEmbeds().nth(EMBED_UNMARKED)).toBeAttached();
-	await expect(readingEmbeds().nth(EMBED_UNMARKED)).not.toHaveClass(FOLDED_RE);
+	await expectFolded(readingEmbeds().nth(EMBED_UNMARKED), false);
 });
 
 test("live preview: a plain `![[child]]` starts folded when the setting is on", async () => {
 	await openInLivePreview(NOTE_A_PATH);
 	const unmarked = editorEmbeds().nth(EMBED_UNMARKED);
-	await expect(unmarked).toHaveClass(FOLDED_RE);
+	await expectFolded(unmarked, true);
 	await expect(unmarked.locator(".markdown-embed-content").first()).toBeHidden();
 });
 
@@ -141,32 +181,57 @@ test("live preview: the FIRST click unfolds an embed folded only by the setting"
 	const unmarked = editorEmbeds().nth(EMBED_UNMARKED);
 	await unmarked.locator(".markdown-embed-title").click();
 
-	// Guards the fold rule: the click inverts the EFFECTIVE state (setting included). A
-	// toggle blind to the setting would compute `!undefined === true`, dispatch "fold" on
-	// an already-folded embed, and look dead.
-	await expect(unmarked).not.toHaveClass(FOLDED_RE);
+	// Guards the fold rule: the embed is folded with NO explicit choice recorded, so a
+	// toggle reading the raw fold field would compute `!undefined === true`, dispatch
+	// "fold" on an already-folded embed, and look dead.
+	await expectFolded(unmarked, false);
 });
 
 test("turning the setting off makes a freshly opened note render expanded in reading mode", async () => {
 	await setStartCollapsedInSettings(false);
 
 	await openInReadingMode(NOTE_B_PATH);
-	await expect(readingEmbeds().nth(EMBED_UNMARKED)).not.toHaveClass(FOLDED_RE);
+	await expectFolded(readingEmbeds().nth(EMBED_UNMARKED), false);
 });
 
 test("with the setting off Live Preview renders that note expanded too", async () => {
 	await openInLivePreview(NOTE_B_PATH);
-	await expect(editorEmbeds().nth(EMBED_UNMARKED)).not.toHaveClass(FOLDED_RE);
+	await expectFolded(editorEmbeds().nth(EMBED_UNMARKED), false);
+});
+
+test("the settings tab writes the new value through to data.json", async () => {
+	// The flip happened in the two tests above; this asserts the FILE, which is the only
+	// thing that outlives the process. Without it nothing here fails when the plugin
+	// never calls `saveData` — the seeded file would keep answering for it.
+	await expectPersistedStartCollapsed(false);
+});
+
+test("live preview: a title click is never dead after the setting is flipped under an open pane", async () => {
+	// The trap: the setting is read when an embed is SYNCED, and an already-open pane is
+	// deliberately not re-folded when it changes ("next render is enough"). So right after
+	// this flip the recomputed default and the rendered DOM disagree.
+	await setStartCollapsedInSettings(true);
+
+	const unmarked = editorEmbeds().nth(EMBED_UNMARKED);
+	const foldedBeforeClick = await isFoldedNow(unmarked);
+	await unmarked.locator(".markdown-embed-title").click();
+
+	// Asserted as "the displayed state INVERTED", not as a fixed end state: what must hold
+	// is that a click always does what the user just saw it should do. A toggle that
+	// inverts the recomputed default instead dispatches the state already on screen, and
+	// the first click after the flip visibly does nothing.
+	await expectFolded(unmarked, !foldedBeforeClick);
 });
 
 test("the setting survives an Obsidian restart", async () => {
-	// Turn it back ON, so the post-restart expectation ("folded") differs from the
-	// built-in default — a lost data.json would show up as an expanded embed.
-	await setStartCollapsedInSettings(true);
+	// The setting was turned back ON above, so the post-restart expectation ("folded")
+	// differs from the built-in default — a data.json that was not read would show up as
+	// an expanded embed.
+	await expectPersistedStartCollapsed(true);
 
 	harness = await harness.relaunch();
 	page = harness.page;
 
 	await openInReadingMode(NOTE_B_PATH);
-	await expect(readingEmbeds().nth(EMBED_UNMARKED)).toHaveClass(FOLDED_RE);
+	await expectFolded(readingEmbeds().nth(EMBED_UNMARKED), true);
 });

@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS } from "./foldableEmbedsSettings";
+import { DEFAULT_SETTINGS, parseSettings } from "./foldableEmbedsSettings";
 import type { FoldableEmbedsSettings } from "./foldableEmbedsSettings";
 
 /**
@@ -22,10 +22,24 @@ export class FoldableEmbedsSettingsStore {
 
 	constructor(private readonly persistence: SettingsPersistence) {}
 
-	/** Reads `data.json`; missing file or missing keys fall back to the defaults. */
+	/** Reads `data.json`; a missing file, a missing key or an unusable value falls back to the defaults. */
 	async load(): Promise<void> {
-		const persisted = (await this.persistence.loadData()) as Partial<FoldableEmbedsSettings> | null;
-		this.current = { ...DEFAULT_SETTINGS, ...persisted };
+		this.current = parseSettings(await this.readPersisted());
+	}
+
+	/**
+	 * WHY failure is swallowed rather than propagated: settings are not the feature. The
+	 * plugin awaits this during `onload`, so a rejection here would abort onload and the
+	 * embeds would stop being foldable AT ALL. Unreadable settings must cost the user their
+	 * settings, nothing more — so the defaults are used, loudly.
+	 */
+	private async readPersisted(): Promise<unknown> {
+		try {
+			return await this.persistence.loadData();
+		} catch (error) {
+			console.error("Foldable embedded notes: could not read settings, using defaults.", error);
+			return null;
+		}
 	}
 
 	get(): FoldableEmbedsSettings {

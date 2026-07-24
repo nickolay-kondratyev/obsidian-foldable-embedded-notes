@@ -56,6 +56,19 @@ export class EmbedFoldDom {
 	}
 
 	/**
+	 * What the user is CURRENTLY LOOKING AT — the last {@link applyFoldState} projection.
+	 *
+	 * This, not any recomputed state, is what a title click must invert: the user clicked
+	 * on the pixels. Both modes can have a projection that lags their own idea of the
+	 * default (reading mode between re-renders, Live Preview after the "start collapsed"
+	 * setting is flipped under an open pane), and inverting the recomputed value there
+	 * dispatches the state already on screen — a click that visibly does nothing.
+	 */
+	static isFolded(embed: HTMLElement): boolean {
+		return embed.classList.contains(EmbedFoldDom.CLS_FOLDED);
+	}
+
+	/**
 	 * Click-to-fold on a title bar. preventDefault/stopPropagation suppress
 	 * Obsidian's own "open the embedded note" behaviour on the title — without them
 	 * every fold click would also navigate away.

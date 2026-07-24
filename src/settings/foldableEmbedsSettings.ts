@@ -23,6 +23,23 @@ export const DEFAULT_SETTINGS: FoldableEmbedsSettings = { startCollapsed: false 
 export type ReadSettings = () => FoldableEmbedsSettings;
 
 /**
+ * The settings described by whatever was found in `data.json`.
+ *
+ * WHY a parse and not a cast: that file is plain JSON a user can hand-edit and an older
+ * plugin version may have written, so its shape is an assumption, not a fact. A cast would
+ * let `{"startCollapsed": "false"}` through as the TRUTHY string `"false"` — every embed
+ * folded while the toggle renders as off. Anything that is not a boolean is not an opinion,
+ * so it falls back to the default.
+ */
+export function parseSettings(persisted: unknown): FoldableEmbedsSettings {
+	const raw = (persisted ?? {}) as Record<string, unknown>;
+	const startCollapsed = raw["startCollapsed"];
+	return {
+		startCollapsed: typeof startCollapsed === "boolean" ? startCollapsed : DEFAULT_SETTINGS.startCollapsed,
+	};
+}
+
+/**
  * THE initial fold state for an embed the user has not explicitly folded/unfolded —
  * i.e. the "default" term of `explicitChoice ?? default`, which both render modes
  * compute independently.

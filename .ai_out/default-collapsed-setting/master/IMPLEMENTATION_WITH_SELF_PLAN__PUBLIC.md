@@ -1,102 +1,127 @@
 # IMPLEMENTATION_WITH_SELF_PLAN — PUBLIC
 
 Feature: **"Start embedded notes collapsed"** setting (default OFF), both render modes.
-Status: **DONE** — lint, build and the full e2e suite (31 tests) are green; committed.
 
-## Plan (as executed)
+- **Iteration 1** shipped the feature in commit `3f21c9d`.
+- **Iteration 2 (this document)** acts on `IMPLEMENTATION_REVIEW__PUBLIC.md` (verdict
+  NOT-READY: 1 interaction bug, 1 test-honesty gap). Both blockers are **fixed**, not
+  rejected. Nothing was rejected outright; two NICE-TO-HAVEs were declined with rationale.
 
-**Goal**: change ONE term — the default used when the user has made no explicit fold choice
-for an embed — in both modes, plus the settings infrastructure to hold it.
+Status: **DONE** — lint 0 errors, build clean, **full e2e suite 34/34 green** (was 31; 3 new
+tests). Every new/changed test was mutation-proven to be able to fail.
 
-1. Settings module (shape + default + the fold-default truth table).
-2. Settings store (`loadData`/`saveData`) + `PluginSettingTab` with one toggle.
-3. Thread a read-time accessor into the reading-mode post-processor and the CM6 extension.
-4. `main.ts`: load settings, wire, `addSettingTab` — still lifecycle-only.
-5. e2e spec covering both modes ON/OFF, explicit-choice-wins, and persistence across restart.
-6. Docs (CLAUDE.md, README) + follow-up ticket.
+---
 
-## What was built
+## Review disposition — item by item
 
-New:
-- `/home/nickolaykondratyev/git_repos/nickolay-kondratyev_obsidian-foldable-embedded-notes-mirror-1/src/settings/foldableEmbedsSettings.ts`
-  — `FoldableEmbedsSettings { startCollapsed }`, `DEFAULT_SETTINGS` (`startCollapsed: false`,
-  the ONE place a default is written), `ReadSettings` accessor type, and
-  `foldedByDefault(settings, hasFoldMarker)` at :33 — the truth table (`startCollapsed ||
-  hasFoldMarker`), so the marker becomes a no-op rather than changing meaning.
-- `.../src/settings/foldableEmbedsSettingsStore.ts` — in-memory current value over a narrow
-  `SettingsPersistence` port (`loadData`/`saveData`, satisfied by `Plugin`); `load()` merges
-  persisted keys onto `DEFAULT_SETTINGS`; `setStartCollapsed()` replaces (never mutates) and
-  saves immediately.
-- `.../src/settings/foldableEmbedsSettingTab.ts` — one `addToggle` row, save on change.
-  Copy: **"Start embedded notes collapsed"** / "Embedded notes render folded until you expand
-  them. Takes effect the next time a note is rendered." No heading and no restore-defaults
-  affordance: a single row needs neither (per the `obsidian-settings` skill).
-- `.../e2e/start-collapsed-setting.e2e.ts` — 8 tests (see below).
+| # | Item | Disposition |
+|---|---|---|
+| **BLOCKING-1** | LP first title click dead after a mid-session setting flip | **ADDRESSED** — `src/embedFoldDom.ts:58-71` (new `isFolded`), `src/livePreview/livePreviewFoldExtension.ts:85-100`, `src/foldableEmbedsPostProcessor.ts:72-77`, comments rewritten at `src/livePreview/foldStateField.ts:72-80` and `livePreviewFoldExtension.ts:91-97`. New e2e `e2e/start-collapsed-setting.e2e.ts:209-224`. |
+| **BLOCKING-2** | "survives a restart" cannot fail on the property it names | **ADDRESSED** — new `ObsidianHarness.readPersistedPluginData()` (`e2e/obsidianHarness.ts:303-317`) + new test `e2e/start-collapsed-setting.e2e.ts:202-207`; restart test now asserts the on-disk precondition (`:226-237`); the misleading spec header rewritten (`:5-21`). Mutation-proven below. |
+| **SF-1** | `load()` casts unvalidated JSON | **ADDRESSED** — `parseSettings()` in `src/settings/foldableEmbedsSettings.ts:25-40` (no cast, `typeof === "boolean"`, default projected from `DEFAULT_SETTINGS`, never re-typed); used at `src/settings/foldableEmbedsSettingsStore.ts:26-28`. |
+| **SF-2** | marker-strip test vacuous when there is no sibling | **ADDRESSED** — `e2e/start-collapsed-setting.e2e.ts:144-157`: the sibling's existence is now asserted separately (`?? null` + `not.toBeNull()`), so `""` can no longer stand in for "nothing to check". |
+| **NTH-1** | corrupt `data.json` kills the whole plugin | **ADDRESSED** — `src/settings/foldableEmbedsSettingsStore.ts:31-42`. Placed in the STORE, not `main.ts`, so `main.ts` stays lifecycle-only: the store owns persistence, therefore it owns persistence failure. |
+| **NTH-2** | `onChange` has no failure path | **ADDRESSED** — `src/settings/foldableEmbedsSettingTab.ts:36-49`: `catch` + `Notice` naming the ACTUAL consequence ("will be lost when Obsidian restarts"), since the in-memory value does take effect. |
+| **NTH-3** | truth-table row 4 never asserted | **ADDRESSED** — `e2e/start-collapsed-setting.e2e.ts:139-142`. Not merely tidiness as it turned out: it is the only test that catches an XOR truth table (proof below). |
+| **NTH-4** | harness uses undocumented internals via `any` | **ADDRESSED** — note added at `e2e/obsidianHarness.ts:325-326`. |
+| **NTH-5** | settings `desc` is two sentences | **DECLINED (reviewer agreed)** — the second sentence carries the "takes effect on next render" POLS warning. Kept verbatim. |
+| — | README limitation about an absorbed first click | **NOT NEEDED** — that text was only required *if* BLOCKING-1 were accepted. It was fixed, so README stays as written (it already, and still correctly, says open panes are not re-folded on the spot). |
 
-Changed:
-- `.../src/main.ts:18-31` — `async onload()`: store `load()` is awaited BEFORE anything is
-  registered (no render may see defaults while disk is still loading), then post-processor,
-  editor extension and `addSettingTab`.
-- `.../src/foldableEmbedsPostProcessor.ts:29-32` (ctor takes `ReadSettings`) and `:62`
-  `this.store.get(key) ?? foldedByDefault(this.readSettings(), hasFoldMarker)`. Local rename
-  `foldedByDefault` → `hasFoldMarker` (it is now only the MARKER's answer).
-- `.../src/livePreview/foldStateField.ts:81-83` — `effectiveFold(state, lineFrom, settings)`
-  = `explicitFoldAt(...) ?? foldedByDefault(settings, isMarkedLine(...))`.
-- `.../src/livePreview/livePreviewFoldExtension.ts:152-166` —
-  `livePreviewFoldExtension(readSettings)` + `ViewPlugin.define((view) => new
-  LivePreviewFoldView(view, readSettings))`; the accessor is called at sync/toggle time.
-- `.../e2e/obsidianHarness.ts:304-321` — new `openPluginSettingsTab()` / `closeSettings()`
-  (drives the REAL settings dialog, the only surface that proves the tab writes through).
-- `CLAUDE.md` (architecture section), `README.md` (new "Settings" section).
+### Declined, with rationale
 
-## Verification — commands run and REAL results
+- **NTH-5** (one-sentence `desc`) — see above; the reviewer's own note says keep.
+- **A unit test for `parseSettings`** — there is still no unit-test runner in this repo
+  (pre-existing open ticket). Adding one for a 4-line pure function would be scope creep;
+  coverage stays e2e, exactly as iteration 1 recorded.
+- No `#QUESTION_FOR_HUMAN` was needed: the coherent fix for BLOCKING-1 required **none** of
+  the excluded machinery (no `Compartment`, no forced re-render of open panes).
+
+---
+
+## BLOCKING-1 — the ROOT fix
+
+The bug was not "the click handler reads the wrong function"; it was **which of two
+legitimately different things the inversion operates on**:
+
+- `effectiveFold(state, line, settings)` answers *"what should be RENDERED"*.
+- the `fen-folded` class answers *"what the user is LOOKING AT"*.
+
+They are the same value only until the default term changes underneath an
+already-rendered pane — precisely what the binding decision "next render is enough"
+permits for the `startCollapsed` setting. The user clicks on **pixels**, so the pixels are
+the correct operand.
+
+`src/livePreview/livePreviewFoldExtension.ts:98` now dispatches `!EmbedFoldDom.isFolded(embed)`.
+State remains the single source of truth for *rendering* — `sync()` still projects
+`effectiveFold` (`:81`) and the dispatch immediately makes state agree with the screen.
+
+Two consequences worth noting:
+
+1. **The modes converged rather than diverged.** Reading mode was already inverting its DOM
+   class (`foldableEmbedsPostProcessor.ts:73`) — which is why the reviewer found it
+   unaffected. Both call sites now go through the one named `EmbedFoldDom.isFolded`, which
+   is where the WHY is documented once, in the module that owns the shared DOM contract.
+2. **Both misleading comments were rewritten**, as the review required:
+   `livePreviewFoldExtension.ts:91-97` (was "Invert the STATE, never the DOM class") and
+   `foldStateField.ts:72-80` (`effectiveFold` no longer claims to be the click handler's
+   operand).
+
+---
+
+## Falsifiability evidence (every test touched or added)
+
+Each mutation was applied to `src/`, the spec re-run, then the source restored from a
+byte-identical copy and re-verified green.
+
+| Test | Mutation applied | Result | Log |
+|---|---|---|---|
+| **NEW** `:209` "a title click is never dead after the setting is flipped under an open pane" | `toggle()` reverted to `!effectiveFold(...)` (the reviewed code) | **RED — only this test failed**, 9 passed. `toHaveClass` timed out on `"…is-loaded fen-embed"` (unfolded), i.e. the click was a no-op | `.tmp/it2-e2e-falsify-b1.log` |
+| **NEW** `:202` "the settings tab writes the new value through to data.json" | `saveData(...)` removed from `foldableEmbedsSettingsStore.ts` (the reviewer's exact mutant, which previously left 8/8 GREEN) | **RED**, 8 passed. `Expected - "startCollapsed": false` / timeout on the predicate | `.tmp/it2-e2e-falsify-b2.log` |
+| **NEW** `:139` "a `![[child]]-` is folded too" | `foldedByDefault` → `startCollapsed !== hasFoldMarker` (XOR) | **RED**. Note test `:131` still PASSED under this mutant, so the new test covers a row nothing else did | `.tmp/it2-e2e-falsify-row4.log` |
+| **CHANGED** `:144` "the marker dash is still stripped" | `sibling.textContent = afterMarker` removed | **RED**: `Expected pattern: not /^-/ Received string: "-"` — still falsifiable after being hardened against the vacuous case | `.tmp/it2-e2e-falsify-strip.log` |
+| **CHANGED** `:226` "the setting survives an Obsidian restart" | (unchanged property; it proves the READ path) | Its write-path claim was moved to `:202`, which is where the mutant now dies. Header rewritten to state the two properties separately | — |
+| Tests `:131`, `:159`, `:173`, `:180`, `:190`, `:197` | untouched behaviour; only `toHaveClass(FOLDED_RE)` → the `expectFolded()` helper | Iteration 1's falsification (neutered `foldedByDefault`) still stands; re-verified green | `.tmp/it2-e2e-full.log` |
+
+Restoration was verified each time with `git diff --stat` before the final full run.
+
+---
+
+## Gates — commands run and REAL output
 
 | Command | Result |
 |---|---|
-| `npm install` | exit 0 (`.tmp/npm-install.log`) |
-| `npm run lint` | exit 0 — **0 errors, 1 warning** (`.tmp/lint-final.log`), see below |
-| `npm run build` | exit 0 (`tsc -noEmit` + esbuild production) (`.tmp/build-final.log`) |
-| `npm run setup:obsidian` | exit 0 — downloaded pinned Obsidian 1.12.7 |
-| `npm run test:e2e` (FULL suite) | exit 0 — **31 passed** (`.tmp/e2e-full.log`) |
-| `npm run test:e2e -- start-collapsed-setting.e2e.ts` | exit 0 — **8 passed** |
+| `npm run lint` | exit 0 — **0 errors, 1 warning** (`.tmp/it2-lint.log`) |
+| `npm run build` | exit 0 (`tsc -noEmit` + esbuild production) (`.tmp/it2-build.log`) |
+| `npm run test:e2e` (FULL suite) | exit 0 — **34 passed** (`.tmp/it2-e2e-full.log`) |
+| `npm run test:e2e -- start-collapsed-setting.e2e.ts` | exit 0 — **11 passed** (`.tmp/it2-e2e-spec.log`) |
 
-The lint warning is `obsidianmd/settings-tab/prefer-setting-definitions` on the new tab:
-the declarative settings API needs Obsidian ≥ 1.13.0 while `manifest.json` declares
-`minAppVersion: 1.0.0`. Bumping that is a user-facing compatibility decision, so it was NOT
-taken here — tracked as ticket
+Suite breakdown: 23 pre-existing tests (`foldable-embeds`, `hello-world`,
+`live-preview-foldable-embeds`) — **unchanged and still green**; 11 in
+`start-collapsed-setting.e2e.ts` (8 → 11).
+
+The single lint warning is unchanged and still correctly deferred:
+`obsidianmd/settings-tab/prefer-setting-definitions` needs Obsidian ≥ 1.13.0 while
+`manifest.json` declares `minAppVersion: 1.0.0`. Ticket
 `_tickets/adopt-obsidians-declarative-settings-api-getsettingdefinitions.md`.
 
-### The new e2e tests (all against a real Obsidian, seeded `data.json` = `{"startCollapsed": true}`)
-1. reading mode: plain `![[child]]` starts folded (+ body actually hidden)
-2. reading mode: the marker dash is still stripped while the setting is on
-3. reading mode: an explicit unfold beats the setting, across a re-render
-4. live preview: plain `![[child]]` starts folded
-5. live preview: the FIRST click unfolds an embed folded only by the setting
-6. turning the setting OFF **through the real settings dialog** → a freshly opened note
-   renders expanded in reading mode
-7. …and in Live Preview too
-8. turning it back ON, then `relaunch()` → still folded after a real restart (persistence)
+---
 
-**Falsification check (done, then reverted):** with `foldedByDefault` temporarily returning
-`hasFoldMarker` only, test 1 FAILED (`.tmp/e2e-falsify.log`) and test 4 FAILED
-(`.tmp/e2e-falsify-lp.log`). Source restored byte-identically and re-run: 8 passed.
-"Setting OFF ⇒ expanded" is additionally guarded by the two pre-existing specs, which run
-with no `data.json` at all and still pass unchanged.
+## Files changed in iteration 2
 
-## Rejected / deferred
-- **CM6 `Compartment` / live re-application to open panes** — explicit non-goal. The
-  accessor is read at render time, so the value is never stale; open panes simply are not
-  re-folded until their next render.
-- **A `+` marker or any marker-syntax change** — explicit non-goal.
-- **Merging the two fold pipelines** — kept independent as the architecture intends. The only
-  thing shared is the settings type/accessor and the one-line truth table `foldedByDefault`,
-  which genuinely was going to be duplicated knowledge (plus its WHY) in both modes.
-- **Declarative settings API** — ticketed, see above.
-- **Unit tests** — no runner in this repo (existing open ticket); coverage stays e2e.
-  `foldedByDefault` and the store's default-merge are the pure logic that would benefit if
-  that ticket is picked up.
-- `scripts/setup-dev-vault.sh` untouched — the new spec brings its own fixtures via
-  `extraFixtures` and reuses the vault's `child.md`.
+| File | Change |
+|---|---|
+| `/home/nickolaykondratyev/git_repos/nickolay-kondratyev_obsidian-foldable-embedded-notes-mirror-1/src/embedFoldDom.ts` | new `isFolded()` — "what the user is looking at", with the WHY that makes it the click operand |
+| `.../src/livePreview/livePreviewFoldExtension.ts` | `toggle()` inverts the projection; comment rewritten |
+| `.../src/livePreview/foldStateField.ts` | `effectiveFold` doc corrected (render-only) |
+| `.../src/foldableEmbedsPostProcessor.ts` | uses the shared `EmbedFoldDom.isFolded` |
+| `.../src/settings/foldableEmbedsSettings.ts` | new `parseSettings()` (SF-1) |
+| `.../src/settings/foldableEmbedsSettingsStore.ts` | parses instead of casting; tolerates a read failure (NTH-1) |
+| `.../src/settings/foldableEmbedsSettingTab.ts` | save-failure `Notice` (NTH-2) |
+| `.../e2e/obsidianHarness.ts` | `readPersistedPluginData()`; undocumented-internals note |
+| `.../e2e/start-collapsed-setting.e2e.ts` | 3 new tests, honest header, hardened strip assertion, `expectFolded`/`isFoldedNow`/`expectPersistedStartCollapsed` helpers |
+| `.../CLAUDE.md` | `embedFoldDom` architecture line now names `isFolded` and the invariant it protects |
+
+`README.md` needed no change — see the disposition table.
 
 ## Questions for human
-None — the clarification answered everything that mattered.
+None.

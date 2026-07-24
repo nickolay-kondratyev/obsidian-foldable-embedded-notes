@@ -70,7 +70,9 @@ export class FoldableEmbedsPostProcessor {
 		// needs no explicit deregistration (unlike Live Preview's, whose title DOM is
 		// Obsidian's and survives unload).
 		EmbedFoldDom.onTitleClick(title, () => {
-			const nowFolded = !embed.classList.contains(EmbedFoldDom.CLS_FOLDED);
+			// Inverts what is DISPLAYED — see EmbedFoldDom.isFolded for WHY that, and not
+			// the recomputed default, is the operand (Live Preview's toggle matches).
+			const nowFolded = !EmbedFoldDom.isFolded(embed);
 			EmbedFoldDom.applyFoldState(embed, chevron, nowFolded);
 			this.store.set(key, nowFolded);
 		});

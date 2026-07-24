@@ -88,9 +88,14 @@ class LivePreviewFoldView implements PluginValue {
 		if (lineFrom === null) {
 			return;
 		}
-		// Invert the STATE, never the DOM class: state is the single source of truth
-		// and the DOM is only its projection.
-		const folded = !effectiveFold(this.view.state, lineFrom, this.readSettings());
+		// Invert what is PROJECTED, not what `effectiveFold` would compute now: the two
+		// genuinely diverge, because the "start collapsed" setting is read at sync time and
+		// open panes are deliberately not re-folded when it changes (see the extension doc
+		// below). Right after a flip, the recomputed default is already the state on screen,
+		// so inverting THAT would dispatch what the embed is showing and the click would look
+		// dead. State stays the single source of truth for RENDERING — this dispatch makes it
+		// agree with the screen, and the next `sync()` projects from it again.
+		const folded = !EmbedFoldDom.isFolded(embed);
 		this.view.dispatch({ effects: setLineFold.of({ lineFrom, folded }) });
 	}
 
