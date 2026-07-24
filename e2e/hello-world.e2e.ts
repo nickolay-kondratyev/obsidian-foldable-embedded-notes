@@ -32,7 +32,7 @@ test.afterAll(async () => {
 
 test("plugin instance is loaded in a real Obsidian", async () => {
 	const loaded = await page.evaluate(
-		(pluginId) => Boolean((window as unknown as { app: any }).app.plugins.plugins[pluginId]),
+		(pluginId) => Boolean(window.app.plugins.plugins[pluginId]),
 		PLUGIN_ID,
 	);
 	expect(loaded).toBe(true);
@@ -40,7 +40,7 @@ test("plugin instance is loaded in a real Obsidian", async () => {
 
 test("plugin id is in Obsidian's enabled-plugins set", async () => {
 	const enabled = await page.evaluate(
-		(pluginId) => (window as unknown as { app: any }).app.plugins.enabledPlugins.has(pluginId),
+		(pluginId) => window.app.plugins.enabledPlugins.has(pluginId),
 		PLUGIN_ID,
 	);
 	expect(enabled).toBe(true);
@@ -50,7 +50,7 @@ test("opening the embedding fixture note makes it the active file", async () => 
 	await harness.openFile(PARENT_NOTE_PATH);
 	await expect
 		.poll(() =>
-			page.evaluate(() => (window as unknown as { app: any }).app.workspace.getActiveFile()?.path ?? null),
+			page.evaluate(() => window.app.workspace.getActiveFile()?.path ?? null),
 		)
 		.toBe(PARENT_NOTE_PATH);
 });

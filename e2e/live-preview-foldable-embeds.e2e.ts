@@ -303,8 +303,7 @@ function linesEndingWithDash(): Promise<number> {
 /** 0-based line number of the first line whose trimmed text equals `text`. */
 async function currentLineOf(text: string): Promise<number> {
 	return page.evaluate((needle) => {
-		const app = (window as unknown as { app: any }).app;
-		const value: string = app.workspace.getMostRecentLeaf().view.editor.getValue();
-		return value.split("\n").findIndex((line: string) => line.trim() === needle);
+		const value = window.app.workspace.getMostRecentLeaf().view.editor.getValue();
+		return value.split("\n").findIndex((line) => line.trim() === needle);
 	}, text);
 }

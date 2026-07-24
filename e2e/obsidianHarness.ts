@@ -4,6 +4,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import type { Browser, Page } from "@playwright/test";
+// Also declares the `window.app` global typing the `page.evaluate` callbacks below rely on.
+import type { EditorPosition } from "./obsidianAppApi";
 
 /**
  * Launches a REAL Obsidian (Electron) on a throwaway copy of `.dev-vault`,
@@ -35,8 +37,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
  * Plugin id from the repo's own manifest — the single source of truth, so this
  * harness is copy-portable across plugin repos.
  */
-export const PLUGIN_ID: string = JSON.parse(
-	fs.readFileSync(path.join(REPO_ROOT, "manifest.json"), "utf8"),
+export const PLUGIN_ID: string = (
+	JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "manifest.json"), "utf8")) as { id: string }
 ).id;
 
 const DEV_VAULT_DIR = path.join(REPO_ROOT, ".dev-vault");
@@ -67,11 +69,7 @@ const WINDOW_HEIGHT_PX = 800;
 const WORKSPACE_READY_TIMEOUT_MS = 60_000;
 const PLUGIN_READY_TIMEOUT_MS = 30_000;
 
-/** 0-based editor position, matching Obsidian's own `EditorPosition`. */
-export interface EditorPosition {
-	readonly line: number;
-	readonly ch: number;
-}
+export type { EditorPosition };
 
 export class ObsidianHarness {
 	private constructor(
@@ -187,8 +185,8 @@ export class ObsidianHarness {
 	/** Opens a vault file in a MAIN-AREA leaf. */
 	async openFile(vaultPath: string): Promise<void> {
 		await this.page.evaluate(async (targetPath) => {
-			// Undocumented-but-stable app globals; typed as any on purpose.
-			const app = (window as unknown as { app: any }).app;
+			// Undocumented-but-stable app globals; see obsidianAppApi.ts for the typing.
+			const app = window.app;
 			const file = app.vault.getAbstractFileByPath(targetPath);
 			if (!file) {
 				throw new Error(`e2e: vault file not found: path=[${targetPath}]`);
@@ -203,7 +201,7 @@ export class ObsidianHarness {
 	 */
 	async runCommand(commandId: string): Promise<void> {
 		const executed = await this.page.evaluate(
-			(id) => (window as unknown as { app: any }).app.commands.executeCommandById(id),
+			(id) => window.app.commands.executeCommandById(id),
 			commandId,
 		);
 		if (!executed) {
@@ -219,7 +217,7 @@ export class ObsidianHarness {
 	 */
 	async setMarkdownViewMode(mode: "preview" | "source"): Promise<void> {
 		await this.page.evaluate(async (targetMode) => {
-			const app = (window as unknown as { app: any }).app;
+			const app = window.app;
 			const leaf = app.workspace.getLeaf(false);
 			const viewState = leaf.getViewState();
 			await leaf.setViewState({
@@ -243,7 +241,7 @@ export class ObsidianHarness {
 	 */
 	async setLivePreviewEnabled(enabled: boolean): Promise<void> {
 		await this.page.evaluate(async (livePreview) => {
-			const app = (window as unknown as { app: any }).app;
+			const app = window.app;
 			app.vault.setConfig("livePreview", livePreview);
 			const leaf = app.workspace.getMostRecentLeaf();
 			const viewState = leaf.getViewState();
@@ -257,7 +255,7 @@ export class ObsidianHarness {
 	/** Places the editor cursor (0-based line/ch) in the active markdown editor. */
 	async setCursor(line: number, ch: number): Promise<void> {
 		await this.page.evaluate((position) => {
-			const app = (window as unknown as { app: any }).app;
+			const app = window.app;
 			app.workspace.getMostRecentLeaf().view.editor.setCursor(position);
 		}, { line, ch });
 	}
@@ -269,7 +267,7 @@ export class ObsidianHarness {
 	 */
 	async replaceRange(text: string, from: EditorPosition, to?: EditorPosition): Promise<void> {
 		await this.page.evaluate((edit) => {
-			const app = (window as unknown as { app: any }).app;
+			const app = window.app;
 			app.workspace.getMostRecentLeaf().view.editor.replaceRange(edit.text, edit.from, edit.to);
 		}, { text, from, to });
 	}
@@ -286,7 +284,7 @@ export class ObsidianHarness {
 	async setPluginEnabled(enabled: boolean): Promise<void> {
 		await this.page.evaluate(
 			async (options) => {
-				const app = (window as unknown as { app: any }).app;
+				const app = window.app;
 				const plugins = app.plugins;
 				await (options.enabled ? plugins.enablePlugin(options.pluginId) : plugins.disablePlugin(options.pluginId));
 			},
@@ -294,7 +292,7 @@ export class ObsidianHarness {
 		);
 		await this.page.waitForFunction(
 			(options) =>
-				Boolean((window as unknown as { app: any }).app.plugins.plugins[options.pluginId]) === options.enabled,
+				Boolean(window.app.plugins.plugins[options.pluginId]) === options.enabled,
 			{ pluginId: PLUGIN_ID, enabled },
 			{ timeout: PLUGIN_READY_TIMEOUT_MS },
 		);
@@ -413,7 +411,7 @@ export class ObsidianHarness {
 
 	private static async waitForWorkspaceReady(page: Page): Promise<void> {
 		await page.waitForFunction(
-			() => (window as unknown as { app?: any }).app?.workspace?.layoutReady === true,
+			() => window.app?.workspace?.layoutReady === true,
 			undefined,
 			{ timeout: WORKSPACE_READY_TIMEOUT_MS },
 		);
@@ -425,14 +423,14 @@ export class ObsidianHarness {
 		// modal's buttons, so this is best-effort cleanup, not a wait.
 		await page.keyboard.press("Escape");
 		await page.evaluate(async (pluginId) => {
-			const app = (window as unknown as { app: any }).app;
+			const app = window.app;
 			// setEnable(true) = the "Turn on community plugins" switch: persists the
 			// flag and loads every plugin listed in community-plugins.json.
 			await app.plugins.setEnable(true);
 			await app.plugins.enablePlugin(pluginId);
 		}, PLUGIN_ID);
 		await page.waitForFunction(
-			(pluginId) => Boolean((window as unknown as { app: any }).app.plugins.plugins[pluginId]),
+			(pluginId) => Boolean(window.app.plugins.plugins[pluginId]),
 			PLUGIN_ID,
 			{ timeout: PLUGIN_READY_TIMEOUT_MS },
 		);
