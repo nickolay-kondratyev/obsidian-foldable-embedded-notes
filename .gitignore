@@ -8,9 +8,10 @@
 # npm
 node_modules
 
-# e2e: throwaway working dirs and the generated dev vault
+# e2e: throwaway working dirs, the generated dev vault and test screenshots
 .tmp
 .dev-vault
+.out
 
 # Don't include the compiled main.js file in the repo.
 # They should be uploaded to GitHub releases instead.

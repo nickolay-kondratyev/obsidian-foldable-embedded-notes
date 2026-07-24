@@ -1,12 +1,15 @@
 name: Release Obsidian plugin
 
+# Push a tag named exactly after `manifest.json`'s version (no leading `v`) and this
+# publishes a release carrying the three assets Obsidian expects. `release_to_public.sh`
+# is the supported way to create that tag.
 on:
     push:
         tags:
             - '*'
 
 jobs:
-    build:
+    release:
         runs-on: ubuntu-latest
         permissions:
             contents: write
@@ -21,22 +24,28 @@ jobs:
                   node-version: 24
                   cache: 'npm'
 
-            - name: Build plugin
-              run: |
-                  npm ci
-                  npm run build
+            - run: npm ci
 
-            - name: Check for optional styles
-              id: styles
+            # Obsidian installs the version recorded in manifest.json, so a tag that
+            # disagrees with it would publish assets nobody can install. Fail early.
+            - name: Verify tag matches manifest version
               run: |
-                  [ -f styles.css ] && echo "exists=true" >> "$GITHUB_OUTPUT" || echo "exists=false" >> "$GITHUB_OUTPUT"
+                  tag="${GITHUB_REF#refs/tags/}"
+                  manifest_version="$(node -p "require('./manifest.json').version")"
+                  if [ "$tag" != "$manifest_version" ]; then
+                    echo "tag=[${tag}] does not match manifest.json version=[${manifest_version}]" >&2
+                    exit 1
+                  fi
+
+            - run: npm run lint
+
+            - name: Build plugin
+              run: npm run build
 
             - name: Attest build provenance
               uses: actions/attest@v4
               with:
-                  subject-path: |
-                      main.js
-                      ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
+                  subject-path: main.js
 
             - name: Create release
               env:
@@ -46,5 +55,5 @@ jobs:
 
                   gh release create "$tag" \
                     --title="$tag" \
-                    --draft \
-                    main.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
+                    --generate-notes \
+                    main.js manifest.json styles.css

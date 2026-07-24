@@ -31,23 +31,45 @@ round-trips, in Live Preview it follows the embed as you edit the note around it
 >   editor line, and folding it never folds the embed it sits in.
 > - Plain **Source mode** is left completely alone: raw markdown, dash included.
 
+## Usage
+
+```markdown
+![[My note]]      → foldable embed, expanded by default
+![[My note]]-     → foldable embed, folded by default
+```
+
+Click the embed's title bar to fold or unfold it. The click never navigates to the
+embedded note.
+
+## Installation
+
+### From the community plugin list
+
+**Settings → Community plugins → Browse**, search for **Foldable Embedded Notes**,
+install, then enable it.
+
+### Manually
+
+Download `main.js`, `manifest.json` and `styles.css` from the
+[latest release](https://github.com/nickolay-kondratyev/obsidian-foldable-embedded-notes/releases/latest)
+and copy them into `<Vault>/.obsidian/plugins/foldable-embedded-notes/`, then reload
+Obsidian and enable the plugin in **Settings → Community plugins**.
+
 ## Development
 
-This project uses TypeScript to provide type checking and documentation. It depends on
-the latest plugin API (`obsidian.d.ts`) in TypeScript Definition format.
-
-- Make sure your NodeJS is at least v18 (`node --version`).
-- `npm install` to install dependencies.
-- `npm run dev` to compile `src/main.ts` to `main.js` in watch mode.
-- `npm run build` to produce a production build.
-- Reload Obsidian to load the new version of the plugin.
+- Node.js v18 or newer (`node --version`).
+- `npm install` — install dependencies.
+- `npm run dev` — compile `src/main.ts` to `main.js` in watch mode.
+- `npm run build` — type-check and produce a production build.
+- `npm run lint` — ESLint, including the Obsidian plugin guideline rules. CI runs it on
+  every push.
 
 ## E2E testing
 
 The e2e suite drives a **real Obsidian (Electron)** under Playwright: it boots a
-throwaway copy of a seeded dev vault with the built plugin installed and asserts
-the plugin actually loads. It runs headless in Docker/CI (auto-downloading a
-pinned Obsidian) and on a real machine.
+throwaway copy of a seeded dev vault with the built plugin installed and asserts the
+plugin actually works. It runs headless in Docker/CI (auto-downloading a pinned
+Obsidian) and on a real machine.
 
 ```bash
 npm run test:e2e                              # run the whole suite
@@ -55,58 +77,38 @@ npm run test:e2e -- hello-world.e2e.ts        # run a single spec
 OBSIDIAN_PATH='/Applications/Obsidian.app/Contents/MacOS/Obsidian' npm run test:e2e   # use an already-installed Obsidian
 ```
 
-On Linux the runner auto-downloads and caches a pinned Obsidian build the first
-time; you can also pre-provision it with `npm run setup:obsidian`. On a
-display-less machine it automatically switches Obsidian to headless flags.
+On Linux the runner auto-downloads and caches a pinned Obsidian build the first time;
+you can also pre-provision it with `npm run setup:obsidian`. On a display-less machine
+it automatically switches Obsidian to headless flags.
 
 Environment variables:
 
 - `OBSIDIAN_PATH` — path to an Obsidian binary. When set, it is used as-is (no
   download). Required on macOS/Windows (no auto-download there).
-- `OBSIDIAN_E2E_EXTRA_ARGS` — extra space-separated Chromium/Electron flags. An
-  explicit value always wins over the auto headless default.
+- `OBSIDIAN_E2E_EXTRA_ARGS` — extra space-separated Chromium/Electron flags. An explicit
+  value always wins over the auto headless default.
 - `OBSIDIAN_CACHE_DIR` — where the downloaded Obsidian is cached (default
   `~/.cache/obsidian-e2e`); share it across checkouts / mount it in Docker.
 
-The e2e suite is intentionally NOT part of `npm test`; it is a release gate.
+## Releasing
 
-## Improve code quality with eslint
+```bash
+./release_to_public.sh            # patch (default)
+./release_to_public.sh minor
+./release_to_public.sh major
+```
 
-- [ESLint](https://eslint.org/) analyzes your code to quickly find problems.
-- This project has eslint preconfigured, together with a custom eslint
-  [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidian-specific guidelines.
-- Run a check with `npm run lint`.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+The script gates on lint, build and e2e (`SKIP_E2E=1` opts out), bumps the version in
+`package.json`, `manifest.json` and `versions.json`, commits, and pushes the commit plus
+a tag named exactly after the new version (no leading `v`).
 
-## Releasing new releases
+That tag is the only trigger needed: `.github/workflows/release.yml` verifies the tag
+matches `manifest.json`, rebuilds, and publishes a GitHub release with `main.js`,
+`manifest.json` and `styles.css` attached — the assets Obsidian's installer expects.
 
-- Update `manifest.json` with your new version number and the minimum Obsidian version
-  required for the release.
-- Update `versions.json` with `"new-plugin-version": "minimum-obsidian-version"` so older
-  versions of Obsidian can download a compatible version of the plugin.
-- Create a new GitHub release using your new version number as the "Tag version". Use the
-  exact version number, without a leading `v`.
-- Upload `manifest.json`, `main.js`, and `styles.css` (if present) as binary attachments.
-  The `manifest.json` must be both at the root of the repository and in the release.
-- Publish the release.
+Bump `minAppVersion` in `manifest.json` by hand before releasing whenever a newer
+Obsidian API is used; `versions.json` picks it up automatically.
 
-> You can simplify the version bump process by running `npm version patch`, `npm version
-> minor`, or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command bumps the version in `manifest.json` and `package.json`, and adds the entry
-> for the new version to `versions.json`.
+## License
 
-## Manually installing the plugin
-
-- Copy `main.js`, `styles.css` (if present), and `manifest.json` to your vault at
-  `VaultFolder/.obsidian/plugins/foldable-embedded-notes/`.
-
-## Adding your plugin to the community plugin list
-
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## API Documentation
-
-See https://docs.obsidian.md
+[0BSD](LICENSE)

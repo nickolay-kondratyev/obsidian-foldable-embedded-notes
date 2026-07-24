@@ -1,7 +1,7 @@
 {
 	"name": "obsidian-foldable-embedded-notes",
 	"version": "1.0.0",
-	"description": "Make embedded notes (![[ ]]) foldable in reading mode, with ![[ ]]- syntax to fold by default.",
+	"description": "Make embedded notes (![[ ]]) foldable in reading mode and Live Preview, with ![[ ]]- syntax to fold by default.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

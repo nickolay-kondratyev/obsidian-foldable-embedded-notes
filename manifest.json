@@ -2,8 +2,9 @@
 	"id": "foldable-embedded-notes",
 	"name": "Foldable Embedded Notes",
 	"version": "1.0.0",
-	"minAppVersion": "1.0.0",
-	"description": "Make embedded notes (![[ ]]) foldable in reading mode, with ![[ ]]- syntax to fold by default.",
+	"minAppVersion": "1.4.16",
+	"description": "Make embedded notes (![[ ]]) foldable in reading mode and Live Preview, with ![[ ]]- syntax to fold by default.",
 	"author": "Nickolay Kondratyev",
+	"authorUrl": "https://github.com/nickolay-kondratyev",
 	"isDesktopOnly": false
 }

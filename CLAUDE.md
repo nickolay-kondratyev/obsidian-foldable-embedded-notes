@@ -77,8 +77,14 @@ those genuinely differ per mode.
 
 ## Versioning & release
 
-- Bump `version` in `manifest.json` (SemVer); map version → min app version in `versions.json`.
-- GitHub release tag must match `version` exactly (no leading `v`); attach `manifest.json`, `main.js`, and `styles.css` (if present) as individual assets.
+- `./release_to_public.sh [patch|minor|major]` is the ONLY release entry point: gates on
+  lint/build/e2e (`SKIP_E2E=1` opts out), bumps `package.json` + `manifest.json` +
+  `versions.json` (`npm version` → `version-bump.mjs`), commits, pushes commit + tag.
+- The tag (named exactly after `version`, no leading `v` — enforced by `.npmrc`) is the
+  only trigger: `.github/workflows/release.yml` re-verifies tag == manifest version,
+  rebuilds, and publishes the release with `main.js`, `manifest.json`, `styles.css`.
+- `minAppVersion` is bumped by hand in `manifest.json` before a release; `versions.json`
+  picks it up from there.
 
 ## Security & privacy
 
