@@ -300,6 +300,25 @@ export class ObsidianHarness {
 		);
 	}
 
+	/**
+	 * Opens Obsidian's settings dialog on THIS plugin's tab (the tab id IS the plugin id).
+	 *
+	 * WHY drive the real dialog rather than the plugin's settings object: the settings tab
+	 * writing through to persistence is precisely what could silently break, and only the
+	 * UI path exercises it.
+	 */
+	async openPluginSettingsTab(): Promise<void> {
+		await this.page.evaluate((pluginId) => {
+			const app = (window as unknown as { app: any }).app;
+			app.setting.open();
+			app.setting.openTabById(pluginId);
+		}, PLUGIN_ID);
+	}
+
+	async closeSettings(): Promise<void> {
+		await this.page.evaluate(() => (window as unknown as { app: any }).app.setting.close());
+	}
+
 	/** Forces the given Obsidian theme by body class (how Obsidian itself switches). */
 	async setTheme(theme: "dark" | "light"): Promise<void> {
 		await this.page.evaluate((mode) => {

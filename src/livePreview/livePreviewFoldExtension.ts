@@ -2,6 +2,7 @@ import type { Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin } from "@codemirror/view";
 import type { PluginValue, ViewUpdate } from "@codemirror/view";
 import { EmbedFoldDom } from "../embedFoldDom";
+import type { ReadSettings } from "../settings/foldableEmbedsSettings";
 import { effectiveFold, explicitFoldField, foldStateExtension, setLineFold } from "./foldStateField";
 import { markerDashDecoration } from "./markedEmbedLines";
 
@@ -24,7 +25,10 @@ class LivePreviewFoldView implements PluginValue {
 	 */
 	private readonly wiredTitles = new WeakSet<HTMLElement>();
 
-	constructor(private readonly view: EditorView) {
+	constructor(
+		private readonly view: EditorView,
+		private readonly readSettings: ReadSettings,
+	) {
 		// childList only, deliberately NOT attributes: our own writes are class
 		// toggles (attribute mutations), so they cannot re-trigger this observer.
 		// Chevron insertion IS a childList mutation and triggers exactly one extra
@@ -74,7 +78,7 @@ class LivePreviewFoldView implements PluginValue {
 				EmbedFoldDom.onTitleClick(title, () => this.toggle(embed), { signal: this.listeners.signal });
 				this.wiredTitles.add(title);
 			}
-			EmbedFoldDom.applyFoldState(embed, chevron, effectiveFold(this.view.state, lineFrom));
+			EmbedFoldDom.applyFoldState(embed, chevron, effectiveFold(this.view.state, lineFrom, this.readSettings()));
 		}
 	}
 
@@ -86,7 +90,7 @@ class LivePreviewFoldView implements PluginValue {
 		}
 		// Invert the STATE, never the DOM class: state is the single source of truth
 		// and the DOM is only its projection.
-		const folded = !effectiveFold(this.view.state, lineFrom);
+		const folded = !effectiveFold(this.view.state, lineFrom, this.readSettings());
 		this.view.dispatch({ effects: setLineFold.of({ lineFrom, folded }) });
 	}
 
@@ -146,7 +150,19 @@ class LivePreviewFoldView implements PluginValue {
 	}
 }
 
-/** Everything needed to make `![[note]]` embeds foldable in Live Preview. */
-export function livePreviewFoldExtension(): Extension {
-	return [foldStateExtension, markerDashDecoration, ViewPlugin.fromClass(LivePreviewFoldView)];
+/**
+ * Everything needed to make `![[note]]` embeds foldable in Live Preview.
+ *
+ * `readSettings` is called at SYNC time, not captured here: the extension is registered
+ * once at plugin load, while the "start collapsed" setting can change at any moment, and
+ * a value read now would freeze it. Deliberately NOT a CM6 `Compartment` — already-open
+ * editors are not required to re-fold the instant the setting flips; the next render
+ * (reopen, mode switch, any edit) picks it up.
+ */
+export function livePreviewFoldExtension(readSettings: ReadSettings): Extension {
+	return [
+		foldStateExtension,
+		markerDashDecoration,
+		ViewPlugin.define((view) => new LivePreviewFoldView(view, readSettings)),
+	];
 }

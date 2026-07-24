@@ -9,9 +9,9 @@ EXPLORE → CLARIFICATION → IMPLEMENTATION_WITH_SELF_PLAN → IMPLEMENTATION_R
 
 ## Log
 - [x] Exploration spawned: EXPLORATION_CODE.md (fold-default code paths), EXPLORATION_TEST.md (test/build infra)
-- [ ] EXPLORATION_PUBLIC.md consolidated
-- [ ] CLARIFICATION
-- [ ] IMPLEMENTATION
+- [x] EXPLORATION_PUBLIC.md consolidated
+- [x] CLARIFICATION — human decisions locked in CLARIFICATION__PUBLIC.md (marker stays no-op; next-render apply; toggle)
+- [ ] IMPLEMENTATION (running)
 - [ ] REVIEW
 - [ ] ITERATION
 - [ ] change_log entry + tickets

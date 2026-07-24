@@ -9,6 +9,15 @@ trailing `-` is a fold marker only when it comes immediately after `]]` and is f
 whitespace or the end of the line, so `![[note]]-like` keeps its literal dash. The marker
 itself is never rendered.
 
+## Settings
+
+**Settings → Community plugins → Foldable Embedded Notes** has one option:
+
+- **Start embedded notes collapsed** — off by default. Turn it on to have every embedded
+  note render folded until you expand it. The `![[ ]]-` marker keeps its meaning and simply
+  becomes redundant while this is on. The new default applies to the next render: reopen the
+  note, switch modes, or edit it — already-open panes are not re-folded on the spot.
+
 Fold state is remembered for the current session and resets when Obsidian restarts; once
 you toggle an embed, your choice overrides the `-` default. Each mode keeps its own state
 (see the limitations below): in reading mode it survives re-renders and reading↔editing

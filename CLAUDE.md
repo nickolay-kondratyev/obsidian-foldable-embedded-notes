@@ -14,8 +14,19 @@ Two independent implementations — one per render mode — over one shared DOM 
 They deliberately share NO readiness logic, fold-state identity or marker parsing;
 those genuinely differ per mode.
 
-- `src/main.ts` — lifecycle only: registers the markdown post-processor and the editor
-  extension.
+- `src/main.ts` — lifecycle only: loads settings, then registers the markdown
+  post-processor, the editor extension and the settings tab.
+- `src/settings/` — the plugin's ONE setting, "start embedded notes collapsed"
+  (`data.json`, default off = today's behaviour):
+  - `foldableEmbedsSettings.ts` — settings shape, `DEFAULT_SETTINGS` (the single source of
+    truth for defaults) and `foldedByDefault(settings, hasFoldMarker)`: the fold-default
+    truth table both modes project, kept in ONE place. The setting makes `![[x]]-` a no-op;
+    it never changes marker syntax.
+  - `foldableEmbedsSettingsStore.ts` / `foldableEmbedsSettingTab.ts` — load/save over a
+    narrow persistence port; one toggle, saved on change.
+  - Both modes read the CURRENT settings through a `ReadSettings` accessor, so a change
+    lands on the NEXT render (reopen / mode switch / edit). Deliberately no CM6
+    `Compartment` and no forced rerender of open panes.
 - `src/embedFoldDom.ts` — the shared DOM contract used by BOTH modes: the class names that
   must match `styles.css`, chevron injection, fold-class application, the title-click
   handler (which must swallow Obsidian's own "open the embed" behaviour), and `unmark`
@@ -25,14 +36,14 @@ those genuinely differ per mode.
 - `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note
   embeds load async, so it waits (MutationObserver, or sync when ready) for
   `.markdown-embed` + title, then: strict `-` marker parse/strip on the embed span's next
-  text-node sibling, initial fold state (session store wins over marker default), and DOM
-  wiring via `EmbedFoldDom`.
+  text-node sibling, initial fold state (session store wins over the `foldedByDefault`
+  default), and DOM wiring via `EmbedFoldDom`.
 - `src/livePreview/` — LIVE PREVIEW, a CM6 editor extension:
   - `markedEmbedLines.ts` — whole-line `![[x]]-` scan (cached in a StateField) + the
     decoration hiding the marker dash, gated on `editorLivePreviewField` so plain Source
     mode stays verbatim.
   - `foldStateField.ts` — explicit fold state as a `RangeSet` (positions map through
-    edits) + `effectiveFold`: an explicit choice beats the marker default.
+    edits) + `effectiveFold`: an explicit choice beats the `foldedByDefault` default.
   - `livePreviewFoldExtension.ts` — ViewPlugin projecting that state onto Obsidian's embed
     widgets, driven by a `contentDOM` MutationObserver (embeds render async, outside CM's
     update cycle), plus the teardown that removes everything injected.
