@@ -1,5 +1,7 @@
 import { RangeSet, RangeValue, StateEffect, StateField } from "@codemirror/state";
 import type { EditorState } from "@codemirror/state";
+import { foldedByDefault } from "../settings/foldableEmbedsSettings";
+import type { FoldableEmbedsSettings } from "../settings/foldableEmbedsSettings";
 import { isMarkedLine, markedEmbedLinesField } from "./markedEmbedLines";
 
 /** An explicit (user-clicked) fold choice, anchored at a line start. */
@@ -68,16 +70,16 @@ function explicitFoldAt(state: EditorState, lineFrom: number): boolean | undefin
 }
 
 /**
- * THE fold rule: an explicit user choice wins over the `![[x]]-` marker default.
+ * THE fold rule: an explicit user choice wins over the default (the `![[x]]-` marker,
+ * or every embed once "start embedded notes collapsed" is on).
  *
- * Used by both the DOM sync (what to render) and the click handler (what to invert) —
- * one function so the two can never disagree. Reading the raw field in the click
- * handler instead would make the first click on a default-folded embed compute
- * `!undefined === true`, i.e. dispatch "fold" on an already-folded embed, and the
- * click would look dead.
+ * This answers "what should be RENDERED", and is used only by the DOM sync. The click
+ * handler deliberately does NOT invert it — it inverts the projection that sync last
+ * wrote (`EmbedFoldDom.isFolded`), because the default term can change under an
+ * already-rendered pane and inverting a value the user never saw makes the click dead.
  */
-export function effectiveFold(state: EditorState, lineFrom: number): boolean {
-	return explicitFoldAt(state, lineFrom) ?? isMarkedLine(state, lineFrom);
+export function effectiveFold(state: EditorState, lineFrom: number, settings: FoldableEmbedsSettings): boolean {
+	return explicitFoldAt(state, lineFrom) ?? foldedByDefault(settings, isMarkedLine(state, lineFrom));
 }
 
 /** Everything the fold rule reads; register as one unit. */

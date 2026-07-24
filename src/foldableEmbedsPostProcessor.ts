@@ -1,6 +1,8 @@
 import { MarkdownPostProcessorContext } from "obsidian";
 import { EmbedFoldDom } from "./embedFoldDom";
 import { FoldStateStore } from "./foldStateStore";
+import { foldedByDefault } from "./settings/foldableEmbedsSettings";
+import type { ReadSettings } from "./settings/foldableEmbedsSettings";
 
 /** Single fold marker character; `![[x]]-` folds by default. */
 const FOLD_MARKER = "-";
@@ -23,7 +25,10 @@ export class FoldableEmbedsPostProcessor {
 	/** Observers still waiting for an embed to resolve; disconnected on plugin unload. */
 	private readonly liveObservers = new Set<MutationObserver>();
 
-	constructor(private readonly store: FoldStateStore) {}
+	constructor(
+		private readonly store: FoldStateStore,
+		private readonly readSettings: ReadSettings,
+	) {}
 
 	/** Disconnects every still-live observer (e.g. a never-resolving `![[missing]]`) on unload. */
 	disconnectAll(): void {
@@ -53,9 +58,9 @@ export class FoldableEmbedsPostProcessor {
 		if (embed.classList.contains(EmbedFoldDom.CLS_FOLDABLE)) {
 			return;
 		}
-		const foldedByDefault = this.stripFoldMarker(embed);
+		const hasFoldMarker = this.stripFoldMarker(embed);
 		const key = this.buildKey(embed, ctx, sectionEl, indexWithinSection);
-		const folded = this.store.get(key) ?? foldedByDefault;
+		const folded = this.store.get(key) ?? foldedByDefault(this.readSettings(), hasFoldMarker);
 
 		EmbedFoldDom.markFoldable(embed);
 		const chevron = EmbedFoldDom.ensureChevron(title);
@@ -65,7 +70,9 @@ export class FoldableEmbedsPostProcessor {
 		// needs no explicit deregistration (unlike Live Preview's, whose title DOM is
 		// Obsidian's and survives unload).
 		EmbedFoldDom.onTitleClick(title, () => {
-			const nowFolded = !embed.classList.contains(EmbedFoldDom.CLS_FOLDED);
+			// Inverts what is DISPLAYED — see EmbedFoldDom.isFolded for WHY that, and not
+			// the recomputed default, is the operand (Live Preview's toggle matches).
+			const nowFolded = !EmbedFoldDom.isFolded(embed);
 			EmbedFoldDom.applyFoldState(embed, chevron, nowFolded);
 			this.store.set(key, nowFolded);
 		});
@@ -81,7 +88,8 @@ export class FoldableEmbedsPostProcessor {
 	 * trailing text/whitespace on that node is preserved. Structural check (no
 	 * regex lookbehind) — required for Obsidian mobile/iOS Safari.
 	 *
-	 * @returns whether this embed is folded-by-default via the marker.
+	 * @returns whether this embed carries the fold marker (see `foldedByDefault` for what
+	 *          that means once the "start collapsed" setting is taken into account).
 	 */
 	private stripFoldMarker(embed: HTMLElement): boolean {
 		const sibling = embed.nextSibling;

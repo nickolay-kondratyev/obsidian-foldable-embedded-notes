@@ -298,6 +298,44 @@ export class ObsidianHarness {
 		);
 	}
 
+	/**
+	 * The plugin's persisted settings AS THEY ARE ON DISK right now, or `null` when the
+	 * plugin has never written them.
+	 *
+	 * Read from Node, deliberately NOT from `app.plugins.plugins[id].loadData()`: the point
+	 * is to prove a real file was written, and asking the running plugin could be answered
+	 * by in-memory state. Cheap enough to poll — see the specs that wait for a save.
+	 */
+	static readPersistedPluginData(): unknown {
+		const dataFile = path.join(VAULT_COPY_DIR, ".obsidian", "plugins", PLUGIN_ID, "data.json");
+		if (!fs.existsSync(dataFile)) {
+			return null;
+		}
+		return JSON.parse(fs.readFileSync(dataFile, "utf8"));
+	}
+
+	/**
+	 * Opens Obsidian's settings dialog on THIS plugin's tab (the tab id IS the plugin id).
+	 *
+	 * WHY drive the real dialog rather than the plugin's settings object: the settings tab
+	 * writing through to persistence is precisely what could silently break, and only the
+	 * UI path exercises it.
+	 *
+	 * `app.setting` is UNDOCUMENTED internal API — it is the only handle on the real dialog,
+	 * so a future Obsidian breaking it breaks this harness, not the plugin. Fix it here.
+	 */
+	async openPluginSettingsTab(): Promise<void> {
+		await this.page.evaluate((pluginId) => {
+			const app = (window as unknown as { app: any }).app;
+			app.setting.open();
+			app.setting.openTabById(pluginId);
+		}, PLUGIN_ID);
+	}
+
+	async closeSettings(): Promise<void> {
+		await this.page.evaluate(() => (window as unknown as { app: any }).app.setting.close());
+	}
+
 	/** Forces the given Obsidian theme by body class (how Obsidian itself switches). */
 	async setTheme(theme: "dark" | "light"): Promise<void> {
 		await this.page.evaluate((mode) => {
