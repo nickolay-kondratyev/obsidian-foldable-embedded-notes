@@ -4,6 +4,14 @@ Make embedded notes (`![[ ]]`) foldable in **reading mode and Live Preview**: ea
 embed gets a clickable title bar with a rotating collapse chevron. Click the title to
 fold/unfold.
 
+Expanded — chevron points down, the embedded note's content is shown:
+
+![Expanded embedded note](assets/images/embedded-expanded.png)
+
+Folded — chevron points right, only the title bar remains:
+
+![Collapsed embedded note](assets/images/embedded-collapsed.png)
+
 Use the `![[ ]]-` syntax to fold an embedded note **by default**. In reading mode the
 trailing `-` is a fold marker only when it comes immediately after `]]` and is followed by
 whitespace or the end of the line, so `![[note]]-like` keeps its literal dash. The marker
