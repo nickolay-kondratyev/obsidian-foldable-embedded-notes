@@ -58,3 +58,17 @@ Reading-mode `![[note]]` embeds foldable via native title bar + rotating setIcon
 - `npm run build` → exit 0 (.tmp/impl-build.log)
 - `npm run lint`  → exit 0, 0 problems (.tmp/impl-lint2.log)
 - `npm run test:e2e` → 9 passed (6 new + 3 hello-world) (.tmp/impl-e2e-full.log)
+
+## Iteration 1 (review feedback — APPROVED_WITH_MINORS)
+- MINOR-1/2 (key collision): key is now `sourcePath::(L<lineStart>|S<djb2(sectionText)>)::src::#<indexWithinSection>`.
+  Occurrence index appended UNCONDITIONALLY → same-note same-section embeds independent.
+  Null-getSectionInfo fallback now uses a stable content hash (sectionHash, djb2) as section discriminator.
+- MINOR-3 (observer leak): liveObservers Set in the processor; stopObserving() removes on resolve/media;
+  disconnectAll() called from main.ts onunload. main.ts stays lifecycle-only (holds processor ref, delegates).
+- MINOR-4 (content hidden): test 1 asserts `.markdown-embed-content` first() VISIBLE when unfolded;
+  test 2 asserts HIDDEN when folded → non-tautological (same locator, opposite result).
+- MINOR-5a: twins.md (`![[child]]` x2) — fold nth(0), assert nth(1) stays unfolded (validates key fix).
+- MINOR-5b: ref-child.md (heading "Section A" + `^blockid`) + ref-parent.md with
+  `![[ref-child#Section A]]-` and `![[ref-child#^blockid]]-`; both fold-by-default, dash stripped.
+- NIT-6 REJECTED (per coordinator): left eslint.config.mts ignoring e2e — legitimate 80/20 scoping.
+- Final: build exit 0, lint 0 problems, e2e 11 passed (.tmp/iter-*.log).

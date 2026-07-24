@@ -7,9 +7,15 @@ import { FoldableEmbedsPostProcessor } from "./foldableEmbedsPostProcessor";
  * Lifecycle only — feature logic lives in the post-processor + fold store modules.
  */
 export default class FoldableEmbeddedNotesPlugin extends Plugin {
+	private postProcessor?: FoldableEmbedsPostProcessor;
+
 	onload(): void {
 		const store = new FoldStateStore();
-		const postProcessor = new FoldableEmbedsPostProcessor(store);
-		this.registerMarkdownPostProcessor(postProcessor.process);
+		this.postProcessor = new FoldableEmbedsPostProcessor(store);
+		this.registerMarkdownPostProcessor(this.postProcessor.process);
+	}
+
+	onunload(): void {
+		this.postProcessor?.disconnectAll();
 	}
 }

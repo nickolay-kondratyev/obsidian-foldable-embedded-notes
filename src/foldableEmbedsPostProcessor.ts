@@ -34,7 +34,18 @@ type OnTitleReady = (title: HTMLElement) => void;
  * gain `.markdown-embed`, so they are simply never touched.
  */
 export class FoldableEmbedsPostProcessor {
+	/** Observers still waiting for an embed to resolve; disconnected on plugin unload. */
+	private readonly liveObservers = new Set<MutationObserver>();
+
 	constructor(private readonly store: FoldStateStore) {}
+
+	/** Disconnects every still-live observer (e.g. a never-resolving `![[missing]]`) on unload. */
+	disconnectAll(): void {
+		for (const observer of this.liveObservers) {
+			observer.disconnect();
+		}
+		this.liveObservers.clear();
+	}
 
 	readonly process = (el: HTMLElement, ctx: MarkdownPostProcessorContext): void => {
 		const embeds = Array.from(el.querySelectorAll<HTMLElement>(SEL_INTERNAL_EMBED));
@@ -114,10 +125,11 @@ export class FoldableEmbedsPostProcessor {
 
 	/**
 	 * Stable per-session identity for one embed occurrence. Prefers the section's
-	 * source line (stable across re-renders); falls back to the embed's index
-	 * within the rendered section when section info is unavailable. Includes `src`
-	 * so multiple embeds of the same note on one line remain distinguishable-ish
-	 * and different notes never collide.
+	 * source line (stable across re-renders); when section info is unavailable it
+	 * falls back to a content hash of the section (stable across re-renders and
+	 * section-distinguishing). The occurrence index within the section is ALWAYS
+	 * appended so multiple embeds of the SAME note in one section/line keep
+	 * independent fold state; `src` keeps different notes from colliding.
 	 */
 	private buildKey(
 		embed: HTMLElement,
@@ -127,8 +139,18 @@ export class FoldableEmbedsPostProcessor {
 	): string {
 		const src = embed.getAttribute("src") ?? "";
 		const lineStart = ctx.getSectionInfo(sectionEl)?.lineStart;
-		const locator = lineStart !== undefined ? `L${lineStart}` : `i${indexWithinSection}`;
-		return `${ctx.sourcePath}::${locator}::${src}`;
+		const locator = lineStart !== undefined ? `L${lineStart}` : `S${this.sectionHash(sectionEl)}`;
+		return `${ctx.sourcePath}::${locator}::${src}::#${indexWithinSection}`;
+	}
+
+	/** djb2 hash of the section's rendered text — a stable section discriminator for the rare null-section fallback. */
+	private sectionHash(sectionEl: HTMLElement): number {
+		const text = sectionEl.textContent ?? "";
+		let hash = 5381;
+		for (let i = 0; i < text.length; i++) {
+			hash = (hash * 33) ^ text.charCodeAt(i);
+		}
+		return hash >>> 0;
 	}
 
 	private whenMarkdownEmbedReady(embed: HTMLElement, onReady: OnTitleReady): void {
@@ -141,22 +163,28 @@ export class FoldableEmbedsPostProcessor {
 			return;
 		}
 		const observer = new MutationObserver(() => {
-			if (this.isMediaEmbed(embed)) {
-				observer.disconnect();
-				return;
-			}
 			const title = this.markdownEmbedTitle(embed);
 			if (title !== null) {
-				observer.disconnect();
+				this.stopObserving(observer);
 				onReady(title);
+				return;
+			}
+			if (this.isMediaEmbed(embed)) {
+				this.stopObserving(observer);
 			}
 		});
+		this.liveObservers.add(observer);
 		observer.observe(embed, {
 			childList: true,
 			subtree: true,
 			attributes: true,
 			attributeFilter: ["class"],
 		});
+	}
+
+	private stopObserving(observer: MutationObserver): void {
+		observer.disconnect();
+		this.liveObservers.delete(observer);
 	}
 
 	/** The title bar, but only once this embed is a resolved markdown (note) embed. */

@@ -17,6 +17,11 @@ test.describe.configure({ mode: "serial" });
 
 const PARENT_NOTE_PATH = "parent.md";
 const NEGATIVE_NOTE_PATH = "marker-negative.md";
+/** Embeds the SAME note twice (independent fold state). */
+const TWINS_NOTE_PATH = "twins.md";
+/** Embeds heading- and block-ref marker variants. */
+const REF_PARENT_NOTE_PATH = "ref-parent.md";
+const REF_CHILD_NOTE_PATH = "ref-child.md";
 
 const CLS_FOLDABLE = "fen-embed";
 const CLS_FOLDED = "fen-folded";
@@ -27,9 +32,18 @@ let page: Page;
 
 test.beforeAll(async () => {
 	harness = await ObsidianHarness.launch({
-		// Strict-marker negative case: the dash is glued to `x`, so it is NOT a
-		// fold marker and must render literally.
-		extraFixtures: { [NEGATIVE_NOTE_PATH]: "# Negative\n\n![[child]]-x\n" },
+		extraFixtures: {
+			// Strict-marker negative case: the dash is glued to `x`, so it is NOT a
+			// fold marker and must render literally.
+			[NEGATIVE_NOTE_PATH]: "# Negative\n\n![[child]]-x\n",
+			// Same note embedded twice — each occurrence must fold independently.
+			[TWINS_NOTE_PATH]: "# Twins\n\n![[child]]\n\n![[child]]\n",
+			// Heading- and block-ref marker variants of a note carrying both refs.
+			[REF_CHILD_NOTE_PATH]:
+				"# Ref child\n\n## Section A\n\nBody of section A.\n\nStandalone block. ^blockid\n",
+			[REF_PARENT_NOTE_PATH]:
+				"# Ref parent\n\n![[ref-child#Section A]]-\n\n![[ref-child#^blockid]]-\n",
+		},
 	});
 	page = harness.page;
 	await harness.openFile(PARENT_NOTE_PATH);
@@ -53,13 +67,20 @@ function nextSiblingText(embed: Locator): Promise<string> {
 	return embed.evaluate((node) => node.nextSibling?.textContent ?? "");
 }
 
-test("unmarked embed renders unfolded", async () => {
-	await expect(foldableEmbeds().nth(0)).not.toHaveClass(new RegExp(`\\b${CLS_FOLDED}\\b`));
+test("unmarked embed renders unfolded with its body visible", async () => {
+	const unmarked = foldableEmbeds().nth(0);
+	await expect(unmarked).not.toHaveClass(new RegExp(`\\b${CLS_FOLDED}\\b`));
+	// Baseline for the folded-hidden assertion below: the populated body div is visible.
+	await expect(unmarked.locator(".markdown-embed-content").first()).toBeVisible();
 });
 
-test("`![[child]]-` renders folded with no visible dash", async () => {
+test("`![[child]]-` renders folded, body hidden, no visible dash", async () => {
 	const marked = foldableEmbeds().nth(1);
 	await expect(marked).toHaveClass(new RegExp(`\\b${CLS_FOLDED}\\b`));
+	// Prove the CSS collapses the RIGHT element: the populated body is actually
+	// hidden (not merely that the class is present). Non-tautological — the
+	// unfolded embed above asserts the same locator is visible.
+	await expect(marked.locator(".markdown-embed-content").first()).toBeHidden();
 	// The marker dash was stripped from the trailing text node, so nothing after
 	// the embed still begins with '-'.
 	expect(await nextSiblingText(marked)).not.toMatch(/^-/);
@@ -109,4 +130,31 @@ test("strict-marker negative `![[child]]-x` stays unfolded with the dash visible
 	await expect(embed).not.toHaveClass(new RegExp(`\\b${CLS_FOLDED}\\b`));
 	// The literal dash (and its glued `x`) must remain in the trailing text node.
 	expect(await nextSiblingText(embed)).toMatch(/^-x/);
+});
+
+test("two embeds of the SAME note fold independently", async () => {
+	await harness.openFile(TWINS_NOTE_PATH);
+	await harness.setMarkdownViewMode("preview");
+	await expect(foldableEmbeds().nth(1)).toBeAttached();
+
+	const foldedRe = new RegExp(`\\b${CLS_FOLDED}\\b`);
+	// Fold only the FIRST occurrence; the second (same note) must be unaffected.
+	await foldableEmbeds().nth(0).locator(".markdown-embed-title").click();
+	await expect(foldableEmbeds().nth(0)).toHaveClass(foldedRe);
+	await expect(foldableEmbeds().nth(1)).not.toHaveClass(foldedRe);
+});
+
+test("heading- and block-ref `![[note#...]]-` fold by default with the dash stripped", async () => {
+	await harness.openFile(REF_PARENT_NOTE_PATH);
+	await harness.setMarkdownViewMode("preview");
+	await expect(foldableEmbeds().nth(1)).toBeAttached();
+
+	const foldedRe = new RegExp(`\\b${CLS_FOLDED}\\b`);
+	const headingEmbed = foldableEmbeds().nth(0); // ![[ref-child#Section A]]-
+	const blockEmbed = foldableEmbeds().nth(1); // ![[ref-child#^blockid]]-
+
+	await expect(headingEmbed).toHaveClass(foldedRe);
+	await expect(blockEmbed).toHaveClass(foldedRe);
+	expect(await nextSiblingText(headingEmbed)).not.toMatch(/^-/);
+	expect(await nextSiblingText(blockEmbed)).not.toMatch(/^-/);
 });
