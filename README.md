@@ -109,6 +109,9 @@ matches `manifest.json`, rebuilds, and publishes a GitHub release with `main.js`
 Bump `minAppVersion` in `manifest.json` by hand before releasing whenever a newer
 Obsidian API is used; `versions.json` picks it up automatically.
 
+To release the version already in `manifest.json` unchanged (the very first release),
+push the tag directly instead: `git tag 1.0.0 && git push origin 1.0.0`.
+
 ## License
 
 [0BSD](LICENSE)

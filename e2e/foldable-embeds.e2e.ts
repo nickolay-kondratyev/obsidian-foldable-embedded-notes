@@ -163,3 +163,22 @@ test("heading- and block-ref `![[note#...]]-` fold by default with the dash stri
 	expect(await nextSiblingText(headingEmbed)).not.toMatch(/^-/);
 	expect(await nextSiblingText(blockEmbed)).not.toMatch(/^-/);
 });
+
+// Last in this serial file: it disables the plugin, so anything after it would run
+// against a half-torn-down world.
+test("disabling the plugin leaves no injected DOM in the reading view", async () => {
+	// Baseline: the injected marks are really there before the plugin goes away.
+	await expect(foldableEmbeds().first()).toBeAttached();
+
+	await harness.setPluginEnabled(false);
+
+	// OUTCOME test, not a teardown test. Measured: Obsidian DISCARDS the rendered
+	// reading-view DOM when a plugin is toggled (elements stamped before the disable
+	// are all detached afterwards), so the post-processor needs no unmark-on-unload
+	// path of its own — unlike Live Preview, whose embed DOM Obsidian reuses.
+	// This asserts what the user can actually observe; if a future Obsidian starts
+	// reusing this DOM too, it fails and the removal path becomes real work.
+	await expect(page.locator(`.markdown-reading-view .${CLS_FOLDABLE}`)).toHaveCount(0);
+	await expect(page.locator(".markdown-reading-view .fen-collapse-icon")).toHaveCount(0);
+	await expect(page.locator(`.markdown-reading-view .${CLS_FOLDED}`)).toHaveCount(0);
+});

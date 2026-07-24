@@ -3,7 +3,7 @@
 	"name": "Foldable Embedded Notes",
 	"version": "1.0.0",
 	"minAppVersion": "1.4.16",
-	"description": "Make embedded notes (![[ ]]) foldable in reading mode and Live Preview, with ![[ ]]- syntax to fold by default.",
+	"description": "Make embedded notes foldable in reading view and Live Preview, with a trailing-dash syntax to fold by default.",
 	"author": "Nickolay Kondratyev",
 	"authorUrl": "https://github.com/nickolay-kondratyev",
 	"isDesktopOnly": false
