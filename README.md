@@ -114,4 +114,4 @@ push the tag directly instead: `git tag 1.0.0 && git push origin 1.0.0`.
 
 ## License
 
-[0BSD](LICENSE)
+[MIT](LICENSE)
