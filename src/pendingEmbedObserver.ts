@@ -22,10 +22,12 @@ const OBSERVED_MUTATIONS: MutationObserverInit = {
  * the RENDER that created it.
  *
  * WHY this is a `MarkdownRenderChild` and not a bare observer: an embed does not have to
- * resolve. `![[does-not-exist]]` settles as `internal-embed is-loaded file-embed mod-empty`
- * and is then never touched again, so an observer waiting for a title on it waits forever —
- * and every re-render of the note added another one (MEASURED 2 → 4 → 6 on Obsidian 1.12.7,
- * each retaining a detached section subtree). Handed to
+ * resolve. `![[does-not-exist]]` sits at `internal-embed is-loaded file-embed mod-empty`
+ * for as long as its target is missing, so an observer waiting for a title on it waits
+ * indefinitely — and it MUST keep waiting, because creating that target upgrades this very
+ * span in place (MEASURED on 1.12.7) and only a live observer can notice. Before this render
+ * child, every re-render of the note simply added another observer (MEASURED 2 → 4 → 6 on
+ * Obsidian 1.12.7, each retaining a detached section subtree). Handed to
  * `MarkdownPostProcessorContext.addChild`, whose documented unload trigger is the DOM ("if
  * the containerEl of the child is ever removed, the component's unload will be called"), the
  * observer dies with the embed span it observes — for ANY reason an embed never resolves,

@@ -108,6 +108,10 @@ test("re-rendering a note of unresolved embeds does not grow the live observers"
 	const unresolvedEmbeds = readingViewEmbeds().and(page.locator(`.${CLS_UNRESOLVED}`));
 	await renderFreshly(MISSING_NOTE_PATH, unresolvedEmbeds, 2);
 	const afterFirstRender = await liveObserverCount();
+	// Guard: the baseline is the EXPECTED one — exactly one live wait per pending embed. An
+	// unresolved embed is waited on for as long as it is on screen (its target can appear),
+	// so the subject here is that the waits do not OUTLIVE their render.
+	expect(afterFirstRender, "one pending observer per unresolved embed").toBe(2);
 	const firstRenderEmbed = await captureElement(unresolvedEmbeds.first());
 
 	// WHEN: the same note is rendered from scratch several more times.
@@ -117,8 +121,45 @@ test("re-rendering a note of unresolved embeds does not grow the live observers"
 	// Guard: each round really rebuilt the embeds (a reused DOM would leak nothing).
 	await expectFreshElement(firstRenderEmbed, unresolvedEmbeds.first());
 
-	// THEN: the count has not grown — before the fix it was +2 per render (2 → 4 → 6).
-	expect(await liveObserverCount()).toBeLessThanOrEqual(afterFirstRender);
+	// THEN: the count is unchanged — before the fix it was +2 per render (2 → 4 → 6).
+	expect(await liveObserverCount()).toBe(afterFirstRender);
+});
+
+/**
+ * The "at most one observer per live embed span" invariant, exercised WHITEBOX: the realistic
+ * trigger for a second post-process pass over the same still-pending span is DOM Obsidian
+ * REUSES (an embed body inside a Live Preview widget), which no reading-mode spec can stage.
+ * So the real `process` is invoked a second time over the real rendered section, with a stub
+ * context standing in for the renderer's — everything under test (the guard, the observer, the
+ * bookkeeping) is production code.
+ */
+test("post-processing the same still-pending embeds twice adds no second observer", async () => {
+	const unresolvedEmbeds = readingViewEmbeds().and(page.locator(`.${CLS_UNRESOLVED}`));
+	await renderFreshly(MISSING_NOTE_PATH, unresolvedEmbeds, 2);
+	const afterFirstRender = await liveObserverCount();
+
+	await page.evaluate((pluginId) => {
+		const plugin = window.app.plugins.plugins[pluginId] as {
+			postProcessor?: { process?: (el: HTMLElement, ctx: unknown) => void };
+		};
+		const process = plugin?.postProcessor?.process;
+		if (process === undefined) {
+			throw new Error("e2e: postProcessor.process is not reachable — internal shape changed");
+		}
+		const section = document.querySelector<HTMLElement>(".markdown-reading-view .markdown-preview-section");
+		if (section === null) {
+			throw new Error("e2e: no rendered reading-view section to post-process again");
+		}
+		// The two members `process` uses off the context; `getSectionInfo` answering null is a
+		// state Obsidian itself produces (a section it cannot locate).
+		process(section, {
+			sourcePath: window.app.workspace.getActiveFile()?.path ?? "",
+			getSectionInfo: () => null,
+			addChild: () => undefined,
+		});
+	}, PLUGIN_ID);
+
+	expect(await liveObserverCount()).toBe(afterFirstRender);
 });
 
 test("a resolved note embed is still made foldable after unresolved ones were rendered", async () => {

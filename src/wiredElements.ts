@@ -1,5 +1,6 @@
 /**
- * The elements ONE plugin instance has already wired for clicks.
+ * The elements ONE plugin instance has already attached something of its own to — a click
+ * listener, or a MutationObserver waiting on the element.
  *
  * Deliberately NOT inferred from the DOM ("it carries our class", "it has a chevron"): a
  * re-enabled plugin meets DOM its predecessor marked, whose listeners died with that
