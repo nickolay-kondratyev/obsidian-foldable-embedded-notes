@@ -54,6 +54,25 @@ const NESTED_FIXTURES = {
 	[`${NESTED_CHILD_NAME}.md`]: `# Nested child\n\nBody before the nested embed.\n\n![[${NESTED_GRANDCHILD_NAME}]]\n`,
 };
 
+/**
+ * A note with two ADJACENT whole-line embeds — the shape that exposes fold-anchor
+ * lifetime. Its own file because `lp-embeds.md` separates its embeds with blank lines:
+ * deleting one embed's line there moves a BLANK line onto the freed anchor, which proves
+ * nothing about the next embed.
+ */
+const DELETE_LINE_PATH = "lp-delete-line.md";
+const DELETE_LINE_FIRST_EMBED = "child";
+const DELETE_LINE_SECOND_EMBED = "sibling";
+const DELETE_LINE_FIRST_TEXT = `![[${DELETE_LINE_FIRST_EMBED}]]`;
+const DELETE_LINE_CONTENT = [
+	"# Delete line parent", // 0
+	"", // 1
+	DELETE_LINE_FIRST_TEXT, // 2
+	`![[${DELETE_LINE_SECOND_EMBED}]]`, // 3
+	"", // 4
+	"Tail text.", // 5
+].join("\n");
+
 const LINE_UNMARKED = 2;
 const LINE_MARKED = 4;
 const LINE_ELSEWHERE = 0;
@@ -72,7 +91,11 @@ let page: Page;
 
 test.beforeAll(async () => {
 	harness = await ObsidianHarness.launch({
-		extraFixtures: { [NOTE_PATH]: NOTE_CONTENT, ...NESTED_FIXTURES },
+		extraFixtures: {
+			[NOTE_PATH]: NOTE_CONTENT,
+			[DELETE_LINE_PATH]: DELETE_LINE_CONTENT,
+			...NESTED_FIXTURES,
+		},
 	});
 	page = harness.page;
 	await harness.openFile(NOTE_PATH);
@@ -284,6 +307,40 @@ test("clicking a NESTED embed's title never folds the embed it sits inside", asy
 	// ...and the outer embed itself is still foldable by its own title.
 	await outer.locator(".markdown-embed-title").first().click();
 	await expectFolded(outer, true);
+});
+
+test("deleting a folded embed's whole line does not hand its fold to the next embed", async () => {
+	// Its OWN file, opened LAST: this test deletes a line, so keeping it away from the
+	// shared `lp-embeds.md` fixture means there is nothing for it to restore.
+	await harness.openFile(DELETE_LINE_PATH);
+	await harness.setMarkdownViewMode("source");
+	await harness.setLivePreviewEnabled(true);
+
+	const first = page.locator(`.cm-content .internal-embed[src="${DELETE_LINE_FIRST_EMBED}"]`);
+	const second = page.locator(`.cm-content .internal-embed[src="${DELETE_LINE_SECOND_EMBED}"]`);
+	await expect(second.locator(".markdown-embed-title")).toBeAttached();
+
+	await first.locator(".markdown-embed-title").click();
+	await expectFolded(first, true);
+	await expectFolded(second, false);
+
+	// Obsidian's own "delete line": the line AND its newline, i.e. a deletion STARTING at
+	// the fold anchor. The anchor must die with its line — a surviving one is remapped onto
+	// whatever moved up into that position, which is the second embed.
+	const firstLine = await currentLineOf(DELETE_LINE_FIRST_TEXT);
+	await harness.replaceRange("", { line: firstLine, ch: 0 }, { line: firstLine + 1, ch: 0 });
+
+	// Gate first on the deletion having actually reached the editor: `expectFolded(...,
+	// false)` retries until it PASSES, so asserting it against a document that still holds
+	// the old line would be green for the wrong reason.
+	await expect(first).toHaveCount(0);
+	await expectFolded(second, false);
+
+	// The same claim once more, immune to timing: a click inverts what is DISPLAYED, so an
+	// embed that is really unfolded FOLDS here. Without this, a fold applied a moment after
+	// the assertion above (embed DOM renders asynchronously) would still pass.
+	await second.locator(".markdown-embed-title").click();
+	await expectFolded(second, true);
 });
 
 /**
