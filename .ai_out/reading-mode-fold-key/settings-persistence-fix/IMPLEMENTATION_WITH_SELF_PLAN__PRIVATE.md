@@ -27,9 +27,11 @@ per instructions (notes added). No change_log entry (TOP_LEVEL_AGENT owns that).
 - To prove a fold-key e2e can actually fail, force the fallback path:
   `const cached = null as CachedOccurrence | null; void this.cachedOccurrenceOf;` in `keyFor`.
   That is a faithful simulation of the old line key.
-- Each spec FILE launches its own Obsidian, so the boot/cold-cache window is per file. Cold hits
-  `foldable-embeds.e2e.ts` (opens in `beforeAll`) but measured 0/6 in
-  `reading-mode-fold-key.e2e.ts` (opens inside the first test).
+- Each spec FILE launches its own Obsidian, so the boot/cold-cache window is per file. It hits
+  `foldable-embeds.e2e.ts` often (opens in `beforeAll`) and `reading-mode-fold-key.e2e.ts` rarely
+  (opens inside the first test) — rarely enough that 6 instrumented runs showed 0 and I wrongly
+  called it absent; a later full run went red. **6 runs is not enough to declare a race gone.**
+  That spec now calls the opt-in `harness.waitUntilIndexed(path)`.
 - Timings: `foldable-embeds.e2e.ts` ~35 s per run, full suite ~60 s.
 
 ## If picked up again
