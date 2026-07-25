@@ -1,6 +1,19 @@
 # PRIVATE memory — IMPLEMENTATION_WITH_SELF_PLAN, settings-persistence-fix
 
-## State: DONE, committed on `settings-persistence-fix`. Full gate green (lint 0, build 0, e2e 37 passed).
+## State: DONE + review iteration DONE. Full gate re-run green after the iteration (lint 0 errors / 1 pre-existing warning, build 0, e2e 37 passed). Ticket NOT closed (TOP_LEVEL_AGENT closes it).
+
+## Review iteration (2nd run of this role)
+Reviewer verdict was APPROVED, 0 blocking. Dispositions live in
+`IMPLEMENTATION_ITERATION__PUBLIC.md` — read that, not this, for the reasoning.
+Only things NOT in there:
+- The two should-fix items were done with `ticket add-note` (NOT by editing ticket bodies):
+  `nid_lcehddb2tdcq6qxztmhvhpgga_e` gained item 4 (store ordering unit tests),
+  `nid_fp6hsv6aljxz1ifawlezcfdgu_e` gained the array/string-root `data.json` case.
+  If a future instance re-reads those tickets, the notes are at the BOTTOM, after the
+  Acceptance Criteria — the enumerated "three pieces" in ticket 1's body is now stale by
+  design; the note says "item 4" explicitly.
+- Resisted two invitations to gold-plate: retry-on-missing in the harness, and coalescing
+  the write queue. Both rejected in writing. Do NOT let a later pass quietly add them.
 
 ## What I did
 Both defects in `src/settings/foldableEmbedsSettingsStore.ts` fixed exactly per the ticket

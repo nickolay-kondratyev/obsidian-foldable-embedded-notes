@@ -40,7 +40,9 @@ Ticket `nid_rbh5zfj0mlvuo1hi2trl8fxli_e` (priority 1, bug). Branch `settings-per
   JSON.** Writing `data.json` is not atomic (truncate, then write), so a Node-side read landing
   inside a save legitimately sees an empty/half-written file — a property of the READER's
   timing, not of the plugin. Observed for real (see evidence). A save that genuinely wrote
-  garbage still fails, since the retries never converge. Both specs updated to `await`.
+  garbage still fails, since the retries never converge. (Correction: only the NEW spec
+  needed `await` — `start-collapsed-setting.e2e.ts`'s single call site is inside an
+  `expect.poll`, which awaits the returned promise itself, so that file was not changed.)
 
 ## Files changed
 
@@ -48,7 +50,6 @@ Ticket `nid_rbh5zfj0mlvuo1hi2trl8fxli_e` (priority 1, bug). Branch `settings-per
   (queue tail), `asKeyedObject()`, serialized + merging `setStartCollapsed`.
 - `e2e/settings-persistence.e2e.ts` — NEW spec, 2 tests.
 - `e2e/obsidianHarness.ts` — `readPersistedPluginData()` async + torn-read retry.
-- `e2e/start-collapsed-setting.e2e.ts` — `await` the now-async harness read.
 - `CLAUDE.md` — settings bullet notes serialized saves + unknown-key round-trip.
 
 ## Test evidence (exact, honest)

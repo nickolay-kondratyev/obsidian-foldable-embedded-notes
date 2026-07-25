@@ -20,7 +20,7 @@ export interface SettingsPersistence {
 export class FoldableEmbedsSettingsStore {
 	private current: FoldableEmbedsSettings = DEFAULT_SETTINGS;
 	/**
-	 * `data.json` AS IT WAS FOUND, so a save can put back the keys this version does not
+	 * The KEYED PART of `data.json` as it was found, so a save can put back the keys this version does not
 	 * understand. {@link parseSettings} stays deliberately lossy on READ — but a vault synced
 	 * from a machine running a newer plugin (or a user's hand-added key) must not have that
 	 * key destroyed by the first toggle here.

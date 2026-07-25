@@ -313,13 +313,16 @@ export class ObsidianHarness {
 	 * read landing inside a save legitimately sees an empty or half-written file. That is a
 	 * property of the reader's timing, not of the plugin, and must not fail a spec — a save
 	 * that really wrote garbage still fails, since the retries never converge.
+	 *
+	 * WHY-NOT retry an ABSENT file: "never written" is an answer, not a transient state, and
+	 * callers waiting for a first save already poll. Retrying it would only slow those polls.
 	 */
 	static async readPersistedPluginData(): Promise<unknown> {
 		const dataFile = path.join(VAULT_COPY_DIR, ".obsidian", "plugins", PLUGIN_ID, "data.json");
+		if (!fs.existsSync(dataFile)) {
+			return null;
+		}
 		for (let attempt = 1; ; attempt += 1) {
-			if (!fs.existsSync(dataFile)) {
-				return null;
-			}
 			try {
 				return JSON.parse(fs.readFileSync(dataFile, "utf8"));
 			} catch (error) {

@@ -44,3 +44,38 @@ Context: deferred deliberately in
 - The three pieces of logic above have focused unit tests (one assert per test, BDD GIVEN/WHEN/THEN).
 - `npm run lint` and `npm run build` stay clean; the e2e suite is unchanged and still green.
 
+
+## Notes
+
+**2026-07-25T03:58:21Z**
+
+ITEM 4 (added after the settings-persistence fix, commit 503f05b on branch
+settings-persistence-fix): `FoldableEmbedsSettingsStore` in
+src/settings/foldableEmbedsSettingsStore.ts, against a FAKE `SettingsPersistence`
+whose `saveData` resolves OUT OF ORDER (first call settles after the second).
+
+WHY this belongs here and is not optional: the store's write serialization is the fix
+for priority-1 bug nid_rbh5zfj0mlvuo1hi2trl8fxli_e (two overlapping toggles could leave
+data.json holding the value the user changed their mind about). That bug has NO
+red-provable test today. The e2e guard in e2e/settings-persistence.e2e.ts ("overlapping
+toggles") passed even against the UNSERIALIZED store on every run - Obsidian's writes
+happened to complete in order - so it catches dropped/stale writes but CANNOT catch a
+regression of the ordering itself. A fake whose promises resolve out of order is the only
+deterministic route, and it needs the runner this ticket adds.
+
+Failure scenario if never done: someone "simplifies" `setStartCollapsed` back to a bare
+`await this.persistence.saveData(...)`, the whole suite stays green, and the P1 bug
+silently returns.
+
+Cases to cover:
+(a) two overlapping `setStartCollapsed` calls -> the LAST call's value is what reaches
+    disk last, and exactly one write happens per call;
+(b) a REJECTED save does not skip the next queued write (the queue tail
+    `this.saving` must stay a never-rejected promise);
+(c) that rejection still reaches the CALLER, so
+    FoldableEmbedsSettingTab.saveStartCollapsed's catch + Notice keeps firing;
+(d) `asKeyedObject` - see the separate note on ticket nid_fp6hsv6aljxz1ifawlezcfdgu_e;
+    covering it here as pure logic is the cheaper alternative to the e2e route.
+
+Raised as SHOULD-FIX 1 in
+.ai_out/settings-persistence/settings-persistence-fix/IMPLEMENTATION_REVIEW__PUBLIC.md.
