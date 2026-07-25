@@ -8,12 +8,16 @@ export const FOLDED_RE = new RegExp(`\\b${CLS_FOLDED}\\b`);
 /**
  * Asserts the fold state an embed is DISPLAYING, shared by every fold spec.
  *
- * The `folded: false` branch asserting PRESENCE first is the whole reason this lives in one
- * place. Playwright resolves a NEGATED matcher the moment the locator matches NOTHING, so a
- * bare `not.toHaveClass` cannot tell "expanded" from "gone" — and "gone" is a real regression
- * shape here: drop the `preventDefault()`/`stopPropagation()` in the title-click handler and
- * the click falls through to Obsidian's own "open the embed", detaching the very element
- * under assertion. Every unfolded expectation would then pass on the broken plugin.
+ * "Unfolded" is a claim about an embed the reader can SEE, so the `folded: false` branch says
+ * both halves out loud instead of leaving presence implicit in a negated matcher.
+ *
+ * BE HONEST about what this does and does not fix. MEASURED against Playwright 1.61.1: a bare
+ * `expect(missing).not.toHaveClass(re)` does NOT pass vacuously — it retries and fails with
+ * "element(s) not found", so no assertion here was silently green on a vanished embed. What
+ * the explicit `toBeAttached()` buys is a failure that NAMES the disappearance (instead of a
+ * 15s "element(s) not found" timeout on a class assertion) and independence from a negated
+ * matcher's empty-locator behaviour, which differs per matcher — `not.toBeVisible()`, the
+ * neighbouring shape, DOES pass on an element that is gone.
  */
 export async function expectFolded(embed: Locator, folded: boolean): Promise<void> {
 	if (folded) {
