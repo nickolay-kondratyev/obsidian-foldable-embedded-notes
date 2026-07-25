@@ -71,8 +71,31 @@ export function isMarkedLine(state: EditorState, lineFrom: number): boolean {
 }
 
 /**
- * Hides the marker dash so `![[x]]-` renders as a plain embed, except on the line the
- * cursor is on — the standard Live Preview convention of revealing raw syntax you are
+ * Every line number any selection range touches — a bare cursor's line included, since a
+ * cursor is an empty range.
+ *
+ * WHY the whole SPAN of each range and not just its `head` (the moving end): Obsidian itself
+ * reveals its own raw `![[x]]` on every line a selection covers, so a dash left hidden there
+ * would make the displayed source contradict the file — and would hide a character sitting
+ * inside what the user is about to type over.
+ *
+ * WHY-NOT `anchor`/`head`: those are direction-dependent, `from`/`to` are always ordered.
+ */
+function linesTouchedBySelection(state: EditorState): Set<number> {
+	const lines = new Set<number>();
+	for (const range of state.selection.ranges) {
+		const first = state.doc.lineAt(range.from).number;
+		const last = state.doc.lineAt(range.to).number;
+		for (let line = first; line <= last; line++) {
+			lines.add(line);
+		}
+	}
+	return lines;
+}
+
+/**
+ * Hides the marker dash so `![[x]]-` renders as a plain embed, except on the lines the
+ * selection touches — the standard Live Preview convention of revealing raw syntax you are
  * editing.
  *
  * Gated on `editorLivePreviewField`: in plain Source mode the raw text must render
@@ -87,10 +110,10 @@ export const markerDashDecoration = EditorView.decorations.compute(
 		if (!state.field(editorLivePreviewField)) {
 			return Decoration.none;
 		}
-		const cursorLines = new Set(state.selection.ranges.map((range) => state.doc.lineAt(range.head).number));
+		const selectedLines = linesTouchedBySelection(state);
 		const hidden = state
 			.field(markedEmbedLinesField)
-			.filter((marked) => !cursorLines.has(state.doc.lineAt(marked.lineFrom).number))
+			.filter((marked) => !selectedLines.has(state.doc.lineAt(marked.lineFrom).number))
 			.map((marked) => Decoration.replace({}).range(marked.dashFrom, marked.dashFrom + 1));
 		return Decoration.set(hidden);
 	},

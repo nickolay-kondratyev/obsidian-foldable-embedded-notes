@@ -26,6 +26,7 @@ export interface AbstractFile {
 export interface Editor {
 	getValue(): string;
 	setCursor(position: EditorPosition): void;
+	setSelection(anchor: EditorPosition, head?: EditorPosition): void;
 	replaceRange(text: string, from: EditorPosition, to?: EditorPosition): void;
 }
 

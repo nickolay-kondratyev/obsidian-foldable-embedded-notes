@@ -84,6 +84,9 @@ const DELETE_LINE_CONTENT = [
 const LINE_UNMARKED = 2;
 const LINE_MARKED = 4;
 const LINE_ELSEWHERE = 0;
+/** The lines bracketing `LINE_MARKED` — a selection between them touches it via NEITHER endpoint. */
+const LINE_ABOVE_MARKED = LINE_MARKED - 1;
+const LINE_BELOW_MARKED = LINE_MARKED + 1;
 /**
  * Valid only while the document still has its original line numbering — the tests using it
  * all run BEFORE the one that inserts lines above it.
@@ -235,6 +238,29 @@ test("the FIRST click on a default-folded marked embed UNFOLDS it", async () => 
 
 test("the marker dash is revealed while the cursor is on its line", async () => {
 	await harness.setCursor(LINE_MARKED, 0);
+	await expect.poll(() => lineEndsWithDash(EMBED_MARKED)).toBe(true);
+
+	await harness.setCursor(LINE_ELSEWHERE, 0);
+	await expect.poll(() => lineEndsWithDash(EMBED_MARKED)).toBe(false);
+});
+
+/**
+ * A selection covering the marked line must reveal the dash even though neither of its ends
+ * sits on that line: Obsidian itself un-hides the raw `![[child]]` of any line a selection
+ * touches, so leaving the dash hidden would display source text the file does not hold — and
+ * the invisible dash would sit inside what the user is about to type over.
+ */
+test("the marker dash is revealed while a selection spans its line", async () => {
+	await harness.setSelection({ line: LINE_ABOVE_MARKED, ch: 0 }, { line: LINE_BELOW_MARKED, ch: 0 });
+	await expect.poll(() => lineEndsWithDash(EMBED_MARKED)).toBe(true);
+
+	await harness.setCursor(LINE_ELSEWHERE, 0);
+	await expect.poll(() => lineEndsWithDash(EMBED_MARKED)).toBe(false);
+});
+
+test("a BACKWARDS selection spanning the marked line reveals the dash too", async () => {
+	// Dragging upwards puts `head` before `anchor`; reveal must key off the range's span.
+	await harness.setSelection({ line: LINE_BELOW_MARKED, ch: 0 }, { line: LINE_ABOVE_MARKED, ch: 0 });
 	await expect.poll(() => lineEndsWithDash(EMBED_MARKED)).toBe(true);
 
 	await harness.setCursor(LINE_ELSEWHERE, 0);

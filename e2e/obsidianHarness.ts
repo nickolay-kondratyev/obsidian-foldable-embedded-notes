@@ -293,6 +293,18 @@ export class ObsidianHarness {
 	}
 
 	/**
+	 * Selects `anchor`..`head` (0-based) in the active markdown editor. Pass the two ends in
+	 * either order — a backwards selection (head BEFORE anchor) is what dragging upwards
+	 * produces, and it must behave the same.
+	 */
+	async setSelection(anchor: EditorPosition, head: EditorPosition): Promise<void> {
+		await this.page.evaluate((range) => {
+			const app = window.app;
+			app.workspace.getMostRecentLeaf().view.editor.setSelection(range.anchor, range.head);
+		}, { anchor, head });
+	}
+
+	/**
 	 * Obsidian's `editor.replaceRange` in the active markdown editor: inserts `text`
 	 * at `from`, or replaces `from`..`to` with it when `to` is given (pass `""` to
 	 * delete). Positions are 0-based.
