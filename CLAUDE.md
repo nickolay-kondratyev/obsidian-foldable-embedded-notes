@@ -56,7 +56,9 @@ those genuinely differ per mode.
 - `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note
   embeds load async, so it waits (MutationObserver, or sync when ready) for
   `.markdown-embed` + title, then: strict `-` marker parse/strip on the embed span's next
-  text-node sibling, initial fold state (session store wins over the `foldedByDefault`
+  text-node sibling — the dash must be followed by whitespace or a real END OF LINE (`<br>`
+  or block end), NOT merely the end of that text node, or `![[x]]-**bold**` would swallow a
+  literal dash — initial fold state (session store wins over the `foldedByDefault`
   default), and DOM wiring via `EmbedFoldDom` under one `FoldableEmbedMark`. `teardown()`
   (called from `onunload`) stops the observers and unloads every live mark.
 - `src/livePreview/` — LIVE PREVIEW, a CM6 editor extension:

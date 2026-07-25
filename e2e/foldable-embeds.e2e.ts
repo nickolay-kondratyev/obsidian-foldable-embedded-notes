@@ -10,7 +10,8 @@ import { captureElement, expectFreshElement } from "./reRenderGuard";
  * `.dev-vault/parent.md` already contains, in order:
  *   1. `![[child]]`   — unmarked (foldable, unfolded by default)
  *   2. `![[child]]-`  — fold-marker (folded by default, dash must not render)
- * A strict-negative variant `![[child]]-x` is layered in via extraFixtures.
+ * Strict-negative variants (`![[child]]-x`, `![[child]]-**bold**`) are layered in via
+ * extraFixtures.
  *
  * Serial: ONE Obsidian instance; later tests build on earlier fold interactions.
  */
@@ -21,6 +22,8 @@ const PARENT_NOTE_PATH = "parent.md";
 /** Any OTHER dev-vault note: the detour that forces `parent.md` to be re-rendered. */
 const SIBLING_NOTE_PATH = "sibling.md";
 const NEGATIVE_NOTE_PATH = "marker-negative.md";
+/** Dash glued to INLINE MARKUP: end of text node, but not end of line. */
+const INLINE_MARKUP_NOTE_PATH = "marker-inline-markup.md";
 /** Embeds the SAME note twice (independent fold state). */
 const TWINS_NOTE_PATH = "twins.md";
 /** Embeds heading- and block-ref marker variants. */
@@ -39,6 +42,10 @@ test.beforeAll(async () => {
 			// Strict-marker negative case: the dash is glued to `x`, so it is NOT a
 			// fold marker and must render literally.
 			[NEGATIVE_NOTE_PATH]: "# Negative\n\n![[child]]-x\n",
+			// Same strict-negative rule, but `**bold**` renders as a SIBLING <strong>
+			// element, so the dash ends its own text node without ending the line.
+			[INLINE_MARKUP_NOTE_PATH]:
+				"# Inline markup\n\n![[child]]-**bold** tail\n\n![[child]]- tail\n",
 			// Same note embedded twice — each occurrence must fold independently.
 			[TWINS_NOTE_PATH]: "# Twins\n\n![[child]]\n\n![[child]]\n",
 			// Heading- and block-ref marker variants of a note carrying both refs.
@@ -138,6 +145,25 @@ test("strict-marker negative `![[child]]-x` stays unfolded with the dash visible
 	await expectFolded(embed, false);
 	// The literal dash (and its glued `x`) must remain in the trailing text node.
 	expect(await nextSiblingText(embed)).toMatch(/^-x/);
+});
+
+test("strict-marker negative `![[child]]-**bold**` stays unfolded with the dash visible", async () => {
+	await harness.openFile(INLINE_MARKUP_NOTE_PATH);
+	await harness.setMarkdownViewMode("preview");
+
+	const embed = foldableEmbeds().first();
+	await expectFolded(embed, false);
+	// Guard the DOM SHAPE this case is about: the dash is a text node of its own,
+	// followed by a <strong> element — "end of text node" without "end of line".
+	expect(await nextSiblingText(embed)).toBe("-");
+	await expect(embed.locator("xpath=following-sibling::strong[1]")).toBeAttached();
+});
+
+test("`![[child]]- tail` still folds, keeping the text after the marker", async () => {
+	// The whitespace branch of the marker parse, which the end-of-line rule must not narrow.
+	const embed = foldableEmbeds().nth(1);
+	await expectFolded(embed, true);
+	expect(await nextSiblingText(embed)).toBe(" tail");
 });
 
 test("two embeds of the SAME note fold independently", async () => {

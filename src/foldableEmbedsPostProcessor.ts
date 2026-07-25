@@ -128,8 +128,13 @@ export class FoldableEmbedsPostProcessor {
 	/**
 	 * STRICT fold-marker parse. `-` counts as a marker only when it is the FIRST
 	 * character of the embed span's next text-node sibling (i.e. immediately after
-	 * `]]`, no whitespace between) AND is itself followed by whitespace or the end
-	 * of that text node. `![[x]]-like` therefore keeps its literal dash.
+	 * `]]`, no whitespace between) AND is itself followed by whitespace or a real
+	 * END OF LINE. `![[x]]-like` therefore keeps its literal dash.
+	 *
+	 * WHY end of LINE and not merely end of that text node: inline markup right after
+	 * the dash (`![[x]]-**bold**`) renders as a SIBLING element, leaving the dash alone
+	 * in its own text node. Treating that as end-of-line armed the marker and deleted a
+	 * dash the user meant literally, inconsistently with the plain-text `![[x]]-x` case.
 	 *
 	 * When it IS a marker, only the dash is removed so it never renders; any
 	 * trailing text/whitespace on that node is preserved. Structural check (no
@@ -148,12 +153,21 @@ export class FoldableEmbedsPostProcessor {
 			return false;
 		}
 		const afterMarker = text.slice(FOLD_MARKER.length);
-		const followedByWhitespaceOrEol = afterMarker === "" || /^\s/.test(afterMarker);
+		const followedByWhitespaceOrEol = /^\s/.test(afterMarker) || (afterMarker === "" && this.isEndOfLine(sibling));
 		if (!followedByWhitespaceOrEol) {
 			return false;
 		}
 		sibling.textContent = afterMarker;
 		return true;
+	}
+
+	/**
+	 * Whether nothing more is RENDERED on this node's line: it is the last inline node of
+	 * its block, or a `<br>` (Obsidian's rendering of a soft line break) comes next.
+	 */
+	private isEndOfLine(node: Node): boolean {
+		const next = node.nextSibling;
+		return next === null || next instanceof HTMLBRElement;
 	}
 
 	/**
