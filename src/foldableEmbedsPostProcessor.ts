@@ -6,6 +6,7 @@ import { EmbedFoldKeys } from "./embedFoldKeys";
 import type { EmbedOccurrence } from "./embedFoldKeys";
 import { FoldableEmbedMark } from "./foldableEmbedMark";
 import { FoldStateStore } from "./foldStateStore";
+import { PendingEmbedObserver } from "./pendingEmbedObserver";
 import { foldedByDefault } from "./settings/foldableEmbedsSettings";
 import type { ReadSettings } from "./settings/foldableEmbedsSettings";
 import { WiredElements } from "./wiredElements";
@@ -13,8 +14,25 @@ import { WiredElements } from "./wiredElements";
 /** Single fold marker character; `![[x]]-` folds by default. */
 const FOLD_MARKER = "-";
 
-/** Classes Obsidian puts on non-note embeds (images/pdf/media) — these are never foldable. */
-const MEDIA_EMBED_CLASSES = ["media-embed", "image-embed", "video-embed", "audio-embed", "pdf-embed"];
+/**
+ * Classes Obsidian stamps on an embed that has SETTLED as something other than a note —
+ * media of every kind, any other file (`file-embed`, e.g. `![[notes.txt]]`), and a target
+ * that does not exist at all (`file-embed mod-empty`). None of these is ever foldable, and
+ * none of them will gain `markdown-embed` later.
+ *
+ * Safe to treat as final because Obsidian assigns an embed's classes in ONE shot: MEASURED
+ * on 1.12.7, a `.internal-embed` is bare at post-process time and goes straight to its final
+ * class list in a single mutation, so `file-embed` never appears transiently on an embed
+ * that later resolves to a note or to media.
+ */
+const NON_NOTE_EMBED_CLASSES = [
+	"media-embed",
+	"image-embed",
+	"video-embed",
+	"audio-embed",
+	"pdf-embed",
+	"file-embed",
+];
 
 type OnTitleReady = (title: HTMLElement) => void;
 
@@ -24,12 +42,19 @@ type OnTitleReady = (title: HTMLElement) => void;
  * Note embeds load their title/content asynchronously: at post-process time the
  * `.internal-embed` span exists but the `.markdown-embed` class and title bar
  * arrive later. We therefore wait (via a scoped MutationObserver, or synchronously
- * when already loaded) for the title before wiring up folding. Media embeds never
- * gain `.markdown-embed`, so they are simply never touched.
+ * when already loaded) for the title before wiring up folding. Non-note embeds never
+ * gain `.markdown-embed`, so they are simply never touched — and the wait for one stops as
+ * soon as its classes say so, or at the latest when its render goes away (see
+ * {@link PendingEmbedObserver}).
  */
 export class FoldableEmbedsPostProcessor {
-	/** Observers still waiting for an embed to resolve; disconnected on plugin unload. */
-	private readonly liveObservers = new Set<MutationObserver>();
+	/**
+	 * Waits still in flight, each bounded by its own render — see {@link PendingEmbedObserver}
+	 * for WHY that bound exists. Strong references on purpose, for the same reason as
+	 * {@link liveMarks}: {@link teardown} has to reach them on plugin unload, which no DOM
+	 * removal announces.
+	 */
+	private readonly liveObservers = new Set<PendingEmbedObserver>();
 	/**
 	 * Embeds this instance has made foldable and not yet given up. Strong references on
 	 * purpose — {@link teardown} has to reach them — and bounded by the live DOM: a mark's
@@ -52,13 +77,16 @@ export class FoldableEmbedsPostProcessor {
 	/**
 	 * Undoes everything this instance did to the DOM, for plugin unload.
 	 *
-	 * Both halves are needed: still-live observers (e.g. a never-resolving `![[missing]]`)
+	 * Both halves are needed: still-live observers (an embed whose note is still loading)
 	 * must stop, and every mark must come off — Obsidian discards a reading view wholesale
-	 * on unload, but an embed BODY inside a Live Preview widget is DOM Obsidian keeps.
+	 * on unload, but an embed BODY inside a Live Preview widget is DOM Obsidian keeps, and
+	 * only a REMOVED container unloads a render child.
 	 */
 	teardown(): void {
-		for (const observer of this.liveObservers) {
-			observer.disconnect();
+		// Copied for the same reason as the marks below: each unload calls back into
+		// `forgetObserver`, which mutates this set.
+		for (const observer of Array.from(this.liveObservers)) {
+			observer.unload();
 		}
 		this.liveObservers.clear();
 		// Unloaded HERE and not left to `ctx.addChild`: MEASURED against Obsidian 1.12.7,
@@ -80,7 +108,7 @@ export class FoldableEmbedsPostProcessor {
 			const foldKey = this.foldKeys.register(embed, () =>
 				this.keys.keyFor(this.occurrenceOf(embed, ctx, el, indexWithinSection)),
 			);
-			this.whenMarkdownEmbedReady(embed, (title) => this.makeFoldable(embed, title, ctx, foldKey));
+			this.whenMarkdownEmbedReady(embed, ctx, (title) => this.makeFoldable(embed, title, ctx, foldKey));
 		});
 	};
 
@@ -217,7 +245,15 @@ export class FoldableEmbedsPostProcessor {
 		};
 	}
 
-	private whenMarkdownEmbedReady(embed: HTMLElement, onReady: OnTitleReady): void {
+	/**
+	 * Calls `onReady` once this embed is a resolved NOTE embed — now, or whenever Obsidian
+	 * finishes loading it. Never, if it turns out not to be a note embed at all.
+	 */
+	private whenMarkdownEmbedReady(
+		embed: HTMLElement,
+		ctx: MarkdownPostProcessorContext,
+		onReady: OnTitleReady,
+	): void {
 		if (this.wiredEmbeds.has(embed)) {
 			return;
 		}
@@ -226,29 +262,43 @@ export class FoldableEmbedsPostProcessor {
 			onReady(readyTitle);
 			return;
 		}
-		const observer = new MutationObserver(() => {
-			const title = this.markdownEmbedTitle(embed);
-			if (title !== null) {
-				this.stopObserving(observer);
-				onReady(title);
-				return;
-			}
-			if (this.isMediaEmbed(embed)) {
-				this.stopObserving(observer);
-			}
-		});
-		this.liveObservers.add(observer);
-		observer.observe(embed, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeFilter: ["class"],
-		});
+		// Already settled as something else: waiting would wait for a mutation that never
+		// comes. MEASURED: this can only fire over DOM Obsidian REUSES (an embed body inside
+		// a Live Preview widget) — on a fresh render the span is still bare `internal-embed`,
+		// and the settling mutation is exactly what the observer below is for.
+		if (this.isNonNoteEmbed(embed)) {
+			return;
+		}
+		const pending = new PendingEmbedObserver(
+			embed,
+			(waiting) => this.onPendingEmbedMutated(waiting, onReady),
+			(stopped) => this.forgetObserver(stopped),
+		);
+		this.liveObservers.add(pending);
+		// Loaded HERE rather than left to `ctx.addChild` — same reason as a mark's: a
+		// component that was never loaded ignores `unload()`, and `teardown()` needs it.
+		pending.load();
+		ctx.addChild(pending);
 	}
 
-	private stopObserving(observer: MutationObserver): void {
-		observer.disconnect();
-		this.liveObservers.delete(observer);
+	/** One change to an embed still being waited on: is the wait over, and how did it end? */
+	private onPendingEmbedMutated(pending: PendingEmbedObserver, onReady: OnTitleReady): void {
+		const embed = pending.embed;
+		const title = this.markdownEmbedTitle(embed);
+		if (title === null && !this.isNonNoteEmbed(embed)) {
+			return;
+		}
+		// Stopped BEFORE `onReady`, whose DOM writes would otherwise come back as more
+		// mutations of this very embed.
+		pending.unload();
+		if (title !== null) {
+			onReady(title);
+		}
+	}
+
+	/** An observer has stopped: drop it, whether it stopped itself or its render went away. */
+	private forgetObserver(pending: PendingEmbedObserver): void {
+		this.liveObservers.delete(pending);
 	}
 
 	/** The title bar, but only once this embed is a resolved markdown (note) embed. */
@@ -259,7 +309,8 @@ export class FoldableEmbedsPostProcessor {
 		return embed.querySelector<HTMLElement>(EmbedFoldDom.SEL_EMBED_TITLE);
 	}
 
-	private isMediaEmbed(embed: HTMLElement): boolean {
-		return MEDIA_EMBED_CLASSES.some((cls) => embed.classList.contains(cls));
+	/** Whether Obsidian has settled this embed as something that is NOT a note. */
+	private isNonNoteEmbed(embed: HTMLElement): boolean {
+		return NON_NOTE_EMBED_CLASSES.some((cls) => embed.classList.contains(cls));
 	}
 }
