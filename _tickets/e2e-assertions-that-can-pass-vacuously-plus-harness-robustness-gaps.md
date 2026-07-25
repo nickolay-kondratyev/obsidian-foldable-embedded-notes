@@ -7,7 +7,7 @@ links: []
 created_iso: 2026-07-25T00:44:50Z
 status_updated_iso: 2026-07-25T00:44:50Z
 type: bug
-priority: 2
+priority: 1
 assignee: CC_WITH-nickolaykondratyev
 ---
 
@@ -33,3 +33,9 @@ Four independent measured problems in the e2e layer — all of them let a real r
 - Each fixed assertion FAILS when the behaviour it guards is deliberately broken (verify by temporarily breaking it, then revert).
 - Full e2e suite green; no long-run hangs; `git status` clean afterwards.
 
+
+## Notes
+
+**2026-07-25T03:35:41Z**
+
+Promoted to priority 1 and should be done FIRST of the must-fix set: several other tickets' acceptance criteria are 'covered by an e2e test', and today two of those assertion shapes can pass vacuously (negated matcher on a missing element; a round-trip that does not re-render). Fixing them first means the rest of the run-through is actually verifiable.

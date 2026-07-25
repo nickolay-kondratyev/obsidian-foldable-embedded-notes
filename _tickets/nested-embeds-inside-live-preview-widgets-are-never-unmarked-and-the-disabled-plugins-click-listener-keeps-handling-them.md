@@ -41,3 +41,9 @@ Three parts, all small:
 - After disable+re-enable, a nested embed is foldable again by one click (proves rewiring).
 - lint, build and full e2e green.
 
+
+## Notes
+
+**2026-07-25T03:35:41Z**
+
+MEASURED (Obsidian 1.12.7) while evaluating whether Live Preview could simply be deleted: with src/main.ts:30 (registerEditorExtension) commented out, the editor is NOT left untouched. In Live Preview the top-level embed gets nothing (fen-embed=false, 0 chevrons, title click is Obsidian's own behaviour) while the NESTED embed still gets fen-embed + a chevron and its title click still folds it — 1 of 2 embeds wired. The session FoldStateStore is also shared: a fold applied through the editor's widget DOM was still in effect when the note was reopened in reading mode. Consequences: (1) removing the LP extension degrades the feature into an inconsistent half-feature in Obsidian's DEFAULT editing mode rather than turning it off, and would additionally require scoping the post-processor out of editor DOM; (2) it reinforces this ticket — the post-processor genuinely needs its own teardown, because destroy() can never own those nested marks.

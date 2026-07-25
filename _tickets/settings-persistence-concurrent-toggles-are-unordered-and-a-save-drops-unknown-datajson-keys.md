@@ -7,7 +7,7 @@ links: []
 created_iso: 2026-07-25T00:44:51Z
 status_updated_iso: 2026-07-25T00:44:51Z
 type: bug
-priority: 3
+priority: 1
 assignee: CC_WITH-nickolaykondratyev
 ---
 
