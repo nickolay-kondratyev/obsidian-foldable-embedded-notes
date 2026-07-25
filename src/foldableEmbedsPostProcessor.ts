@@ -1,5 +1,7 @@
 import { MarkdownPostProcessorContext } from "obsidian";
 import { EmbedFoldDom } from "./embedFoldDom";
+import { EmbedFoldKeyRegistry } from "./embedFoldKeyRegistry";
+import type { PendingEmbedFoldKey } from "./embedFoldKeyRegistry";
 import { EmbedFoldKeys } from "./embedFoldKeys";
 import type { EmbedOccurrence } from "./embedFoldKeys";
 import { FoldableEmbedMark } from "./foldableEmbedMark";
@@ -36,12 +38,16 @@ export class FoldableEmbedsPostProcessor {
 	 */
 	private readonly liveMarks = new Set<FoldableEmbedMark>();
 	private readonly wiredEmbeds = new WiredElements();
+	/** Keys of every embed span seen, so a NESTED one can inherit its host's identity. */
+	private readonly foldKeys: EmbedFoldKeyRegistry;
 
 	constructor(
 		private readonly store: FoldStateStore,
 		private readonly readSettings: ReadSettings,
 		private readonly keys: EmbedFoldKeys,
-	) {}
+	) {
+		this.foldKeys = new EmbedFoldKeyRegistry(keys);
+	}
 
 	/**
 	 * Undoes everything this instance did to the DOM, for plugin unload.
@@ -68,9 +74,13 @@ export class FoldableEmbedsPostProcessor {
 	readonly process = (el: HTMLElement, ctx: MarkdownPostProcessorContext): void => {
 		const embeds = Array.from(el.querySelectorAll<HTMLElement>(EmbedFoldDom.SEL_INTERNAL_EMBED));
 		embeds.forEach((embed, indexWithinSection) => {
-			this.whenMarkdownEmbedReady(embed, (title) =>
-				this.makeFoldable(embed, title, ctx, el, indexWithinSection),
+			// Registered SYNCHRONOUSLY, before this embed's own body can be post-processed:
+			// that is what guarantees an embed NESTED inside it can reach this key (see
+			// EmbedFoldKeyRegistry). Derivation itself stays lazy — see `occurrenceOf`.
+			const foldKey = this.foldKeys.register(embed, () =>
+				this.keys.keyFor(this.occurrenceOf(embed, ctx, el, indexWithinSection)),
 			);
+			this.whenMarkdownEmbedReady(embed, (title) => this.makeFoldable(embed, title, ctx, foldKey));
 		});
 	};
 
@@ -78,15 +88,14 @@ export class FoldableEmbedsPostProcessor {
 		embed: HTMLElement,
 		title: HTMLElement,
 		ctx: MarkdownPostProcessorContext,
-		sectionEl: HTMLElement,
-		indexWithinSection: number,
+		pendingKey: PendingEmbedFoldKey,
 	): void {
 		// Guard against a second post-process pass over the same live DOM.
 		if (this.wiredEmbeds.has(embed)) {
 			return;
 		}
 		const hasFoldMarker = this.stripFoldMarker(embed);
-		const foldKey = this.keys.keyFor(this.occurrenceOf(embed, ctx, sectionEl, indexWithinSection));
+		const foldKey = pendingKey.resolve();
 		if (foldKey.superseded !== null) {
 			// This render can identify the embed better than an earlier one could; carry over
 			// whatever the user recorded back then (see FoldStateStore.adoptRecordingOf).

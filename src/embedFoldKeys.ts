@@ -84,14 +84,19 @@ interface CachedOccurrence {
  *   the wrong entry — misattributing exactly as the line key did — or none, which degrades to
  *   the fallback. NOT observed for edit-then-reopen: the e2e's reopen-through-another-file
  *   re-render keys both embeds by occurrence and both folds land on the right embed.
- * - Nested embeds still share ONE key per host (ticket nid_zqaxj18jbxwnazzz8aeggz91u_e). The
- *   mechanism is UNMEASURED: `ctx.getSectionInfo` is expected to return null outside a
- *   top-level markdown view, in which case such an embed never reaches the occurrence path and
- *   takes the `S<hash>` fallback — which is per-host-section, hence one shared key either way.
+ * NESTED embeds (an embed inside an embed BODY) get none of the above on their own: their
+ * occurrence is stated in the CHILD note, so every occurrence of the same host renders the
+ * identical `sourcePath`, `src`, section text and index — one shared key, and folding one
+ * folded them all (ticket nid_zqaxj18jbxwnazzz8aeggz91u_e; MEASURED: `ctx.getSectionInfo`
+ * answers null for an embed body, so they all take the `S<hash>` fallback). What tells them
+ * apart is the HOST they are rendered inside, so a nested embed's key is its own key
+ * QUALIFIED by its host's — see {@link nestedIn} and `EmbedFoldKeyRegistry`.
  *
  * Key SHAPE: `sourcePath::<locator>::…`, an opaque string whose `sourcePath` prefix is
  * parseable (per-file invalidation later) and whose locator field says which derivation
- * produced it, so occurrence keys and fallback keys can never collide.
+ * produced it, so occurrence keys and fallback keys can never collide. A nested key is
+ * `<hostKey>::in::<ownKey>`, so its parseable prefix is the HOST's — per-file invalidation of
+ * a note would sweep the embeds nested inside its embeds too, which is what one wants.
  */
 export class EmbedFoldKeys {
 	/** Locator field of an occurrence-derived key. */
@@ -100,6 +105,10 @@ export class EmbedFoldKeys {
 	private static readonly LINE_LOCATOR = "L";
 	/** Locator prefix of a fallback key placed by hashed section text (no line known). */
 	private static readonly SECTION_HASH_LOCATOR = "S";
+	/** Field joining a host embed's key to the key of an embed nested INSIDE it. */
+	private static readonly NESTING_SEPARATOR = "in";
+	/** Locator of a host embed whose own key was never derived — see {@link unseenHostKey}. */
+	private static readonly UNSEEN_HOST_LOCATOR = "host";
 
 	constructor(private readonly readEmbeds: ReadEmbeds) {}
 
@@ -115,6 +124,39 @@ export class EmbedFoldKeys {
 			`#${cached.ordinal}`,
 		].join("::");
 		return { current, superseded: this.positionalFallbackKey(occurrence) };
+	}
+
+	/**
+	 * `own`, qualified by the key of the HOST embed it is rendered inside — the identity a
+	 * nested embed has no way to state itself (see the note on nesting above).
+	 *
+	 * The superseded key is qualified by the host's OWN superseded key when it has one: an
+	 * earlier, colder render of this pair would have keyed BOTH levels weakly, so that is the
+	 * key the recording to be taken over actually sits under.
+	 */
+	nestedIn(host: EmbedFoldKey, own: EmbedFoldKey): EmbedFoldKey {
+		return {
+			current: this.qualify(host.current, own.current),
+			superseded:
+				own.superseded === null ? null : this.qualify(host.superseded ?? host.current, own.superseded),
+		};
+	}
+
+	/**
+	 * The key standing in for a host embed whose own key was never derived, identifying it by
+	 * its link alone.
+	 *
+	 * Reached only for a host that the reading-mode post-processor never saw — in practice a
+	 * TOP-LEVEL Live Preview embed, whose span CM6 builds while only its BODY goes through the
+	 * post-processor. KNOWN LIMITATION: two Live Preview embeds of the SAME note therefore
+	 * still share the fold state of the embeds nested inside them; different notes no longer do.
+	 */
+	unseenHostKey(hostSrc: string): EmbedFoldKey {
+		return { current: `${EmbedFoldKeys.UNSEEN_HOST_LOCATOR}::${hostSrc}`, superseded: null };
+	}
+
+	private qualify(hostKey: string, ownKey: string): string {
+		return [hostKey, EmbedFoldKeys.NESTING_SEPARATOR, ownKey].join("::");
 	}
 
 	/**
