@@ -35,6 +35,9 @@ const IMAGE_NOTE_PATH = "obs-image.md";
 const IMAGE_PATH = "obs-image.png";
 /** Embed-free detour note, so reopening really rebuilds the note under test. */
 const DETOUR_NOTE_PATH = "obs-detour.md";
+/** Its embed target does NOT exist at launch — the test creates it mid-render. */
+const LATE_HOST_NOTE_PATH = "obs-late-host.md";
+const LATE_TARGET_NOTE_PATH = "obs-late-target.md";
 
 /** Re-renders of the note under test; the ticket MEASURED growth from the very first one. */
 const RENDER_ROUNDS = 3;
@@ -57,6 +60,7 @@ test.beforeAll(async () => {
 			[IMAGE_PATH]: "not really a png",
 			[IMAGE_NOTE_PATH]: "# Image\n\n![[obs-image.png]]\n",
 			[DETOUR_NOTE_PATH]: "# Detour\n\nA note with no embeds at all.\n",
+			[LATE_HOST_NOTE_PATH]: "# Late\n\n![[obs-late-target]]\n",
 		},
 	});
 	page = harness.page;
@@ -120,6 +124,25 @@ test("re-rendering a note of unresolved embeds does not grow the live observers"
 test("a resolved note embed is still made foldable after unresolved ones were rendered", async () => {
 	await renderFreshly(RESOLVED_NOTE_PATH, readingViewEmbeds(), 1);
 
+	await expect(page.locator(`.markdown-reading-view .markdown-embed.${CLS_FOLDABLE}`)).toHaveCount(1);
+});
+
+/**
+ * The behaviour the pending observer buys, and the reason an unresolved embed must keep
+ * being waited on: `mod-empty` means "target missing RIGHT NOW", not "never a note".
+ * MEASURED on Obsidian 1.12.7 — creating the target upgrades the SAME embed span in place
+ * (`file-embed mod-empty` → `markdown-embed inline-embed`), with no re-render of the note,
+ * so only a live observer can still make it foldable.
+ */
+test("an embed whose target is created later becomes foldable without reopening the note", async () => {
+	// GIVEN: the note rendered while its embed target does not exist.
+	const unresolvedEmbeds = readingViewEmbeds().and(page.locator(`.${CLS_UNRESOLVED}`));
+	await renderFreshly(LATE_HOST_NOTE_PATH, unresolvedEmbeds, 1);
+
+	// WHEN: the target note is created, with the reading view left open on it.
+	await harness.createNote(LATE_TARGET_NOTE_PATH, "Body of the late target.\n");
+
+	// THEN: the embed turns into a foldable note embed by itself.
 	await expect(page.locator(`.markdown-reading-view .markdown-embed.${CLS_FOLDABLE}`)).toHaveCount(1);
 });
 

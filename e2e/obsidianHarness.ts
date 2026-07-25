@@ -231,6 +231,20 @@ export class ObsidianHarness {
 	}
 
 	/**
+	 * Creates a vault file WHILE Obsidian is running, through Obsidian's own vault API — so the
+	 * app reacts to it exactly as it does to a note the user creates (index, link resolution,
+	 * open views). Writing the file behind Obsidian's back would not be the same event.
+	 */
+	async createNote(vaultPath: string, contents: string): Promise<void> {
+		await this.page.evaluate(
+			async (note) => {
+				await window.app.vault.create(note.path, note.contents);
+			},
+			{ path: vaultPath, contents },
+		);
+	}
+
+	/**
 	 * Waits until Obsidian has INDEXED `vaultPath` (its metadata cache answers).
 	 *
 	 * App readiness, not an assertion, and OPT-IN because it hides one real product

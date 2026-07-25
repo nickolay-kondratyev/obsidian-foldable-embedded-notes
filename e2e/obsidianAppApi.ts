@@ -47,6 +47,7 @@ export interface WorkspaceLeaf {
 export interface ObsidianApp {
 	readonly vault: {
 		getAbstractFileByPath(path: string): AbstractFile | null;
+		create(path: string, data: string): Promise<AbstractFile>;
 		setConfig(key: string, value: unknown): void;
 	};
 	readonly workspace: {
