@@ -93,9 +93,17 @@ async function waitForEmbedsWired(expected: number): Promise<void> {
 	await expect(foldableEmbeds().nth(expected - 1).locator(".fen-collapse-icon")).toBeAttached();
 }
 
-/** Opens `path` in reading mode with all `embedCount` of its embeds wired. */
+/**
+ * Opens `path` in reading mode with all `embedCount` of its embeds wired, and INDEXED.
+ *
+ * The index wait is what makes these tests about the EDIT rather than about Obsidian's boot:
+ * a fold recorded before the index answers is keyed positionally, and the plugin reclaims it
+ * on the next RENDER — which these tests do not give it, because they edit first. That boot
+ * window is guarded, deliberately without this wait, by `foldable-embeds.e2e.ts`.
+ */
 async function openInReadingMode(path: string, embedCount = 2): Promise<void> {
 	await harness.openFile(path);
+	await harness.waitUntilIndexed(path);
 	await harness.setMarkdownViewMode("preview");
 	await waitForEmbedsWired(embedCount);
 }

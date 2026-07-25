@@ -201,10 +201,11 @@ export class ObsidianHarness {
 	/**
 	 * Opens a vault file in a MAIN-AREA leaf.
 	 *
-	 * Deliberately does NOT wait for the vault INDEX. MEASURED on Obsidian 1.12.7: the index is
-	 * still being built for the first render or two after launch, and the plugin has to keep a
-	 * user's fold across that window (see `EmbedFoldKeys`). Waiting here would hide exactly the
-	 * behaviour the reading-mode fold specs exist to guard.
+	 * Deliberately does NOT wait for the vault INDEX — {@link waitUntilIndexed} is opt-in for
+	 * the specs that need it. MEASURED on Obsidian 1.12.7: the index is still being built for
+	 * the first render or two after launch, and the plugin has to keep a user's fold across
+	 * that window (see `EmbedFoldKeys`). Waiting here unconditionally would hide that behaviour
+	 * from `foldable-embeds.e2e.ts`, which is the only place it is guarded.
 	 */
 	async openFile(vaultPath: string): Promise<void> {
 		await this.page.evaluate(async (targetPath) => {
@@ -216,6 +217,24 @@ export class ObsidianHarness {
 			}
 			await app.workspace.getLeaf(false).openFile(file);
 		}, vaultPath);
+	}
+
+	/**
+	 * Waits until Obsidian has INDEXED `vaultPath` (its metadata cache answers).
+	 *
+	 * App readiness, not an assertion, and OPT-IN because it hides one real product
+	 * behaviour: a fold made before the index answers is recorded under a positional key, and
+	 * the plugin only reclaims it on the next render — so an EDIT made in that window can
+	 * still move it (documented on `EmbedFoldKeys`; not a regression, the line key it replaced
+	 * did that unconditionally). A spec whose subject IS an edit must therefore start from an
+	 * indexed note, or it measures the boot race instead of the edit. A spec whose subject is
+	 * the boot race must NOT call this.
+	 */
+	async waitUntilIndexed(vaultPath: string): Promise<void> {
+		await this.page.waitForFunction(
+			(targetPath) => window.app.metadataCache.getCache(targetPath) !== null,
+			vaultPath,
+		);
 	}
 
 	/**

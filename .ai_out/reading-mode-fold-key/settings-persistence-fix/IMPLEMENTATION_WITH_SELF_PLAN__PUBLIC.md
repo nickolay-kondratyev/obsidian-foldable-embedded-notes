@@ -15,7 +15,7 @@ The BLOCKING finding is **RESOLVED IN THE PRODUCT**, not escalated.
 | `src/foldStateStore.ts` | (iteration 1) `adoptRecordingOf` — the cold-cache takeover. |
 | `src/foldableEmbedsPostProcessor.ts` | `buildKey`/`sectionHash` removed; gathers an `EmbedOccurrence`, asks `EmbedFoldKeys`, and runs the takeover before reading the fold. |
 | `src/main.ts` | Injects `new EmbedFoldKeys((p) => this.app.metadataCache.getCache(p)?.embeds ?? [])`. |
-| `e2e/obsidianHarness.ts`, `e2e/obsidianAppApi.ts` | (iteration 1) the index wait added in iteration 0 is REVERTED — `openFile` is back to what it was, with a comment saying WHY it must not wait. |
+| `e2e/obsidianHarness.ts`, `e2e/obsidianAppApi.ts` | (iteration 1) the BLANKET index wait in `openFile` is REVERTED; an OPT-IN `waitUntilIndexed(path)` replaces it, used by one spec only. |
 | `CLAUDE.md` | `src/embedFoldKeys.ts` bullet: identity, key shape, takeover, and a pointer to the module for the limits (no longer duplicated). |
 
 Commits: `e5970b3` (failing spec), `83a79a6` (fix + docs), `ee8b761` (iteration 1: takeover +
@@ -60,9 +60,14 @@ was cache-independent and kept that fold. Iteration 1 treated it as such.
   `adoptRecordingOf`, 6 runs → it fires in **2 of 6**, the same proportion as the failures, always
   `parent.md::L4::child::#0` → `parent.md::occ::child::#0` with `folded=true`. Instrumentation
   removed afterwards.
-- **`reading-mode-fold-key.e2e.ts` does not need a wait either**: instrumented `keyFor`, 6 runs →
-  **0 cold-cache derivations**. That spec opens its note inside the first test rather than in
-  `beforeAll`, which is late enough. Measured, not assumed.
+- **`reading-mode-fold-key.e2e.ts` DOES need a spec-local wait — I got this wrong first.**
+  Instrumenting `keyFor` showed 0 cold derivations in 6 runs of that spec alone, so I concluded it
+  was safe. It is not: full-suite run 6 went RED at its test 1 with exactly the residue below (fold
+  recorded cold, then an EDIT before any re-render, so the takeover never got its chance). Recorded
+  here rather than quietly patched: 6 runs was too small a sample to call a race absent.
+  The fix is an OPT-IN `ObsidianHarness.waitUntilIndexed(path)` called only by that spec, whose
+  subject is the EDIT. `foldable-embeds.e2e.ts` still races the index by construction and remains
+  the guard for the boot window — which is precisely the coverage the reviewer's S4 asked for.
 
 ### Options considered for B1, and why this one
 
@@ -87,7 +92,7 @@ than its predecessor anywhere, and better everywhere else.
 | **B1** cold window is a regression | **INCORPORATED (fixed in product)** | The takeover; harness wait reverted; measured above. No human sign-off needed because the trade no longer exists. |
 | **S2** "strictly less lossy" is false | **INCORPORATED** | Sentence deleted from `src/embedFoldKeys.ts`; the ticket body now says REGRESSION; a retraction note added to the ticket. |
 | **S3** `z4jq` frequency changed | **INCORPORATED** | `EmbedFoldKeys` now says the line key had the same FLAW but not the same frequency (line-coincidence vs. any deletion in the note). `z4jq` stays OPEN. |
-| **S4** harness wait narrower than claimed | **INCORPORATED by REMOVAL** | The wait is gone, so all three sub-points (stale-but-non-null, nested `sourcePath`, no timeout message) are moot. `openFile`'s comment now says why it must NOT wait. |
+| **S4** harness wait narrower than claimed | **INCORPORATED** | The BLANKET wait is gone: `openFile` no longer waits, so the boot window is guarded again. The wait survives as an OPT-IN `waitUntilIndexed(path)` used by the one spec whose subject is an EDIT, with a doc comment that names the product behaviour it hides. Sub-points 1-2 (stale-but-non-null, nested `sourcePath`) no longer apply to any spec's correctness; 3 (no timeout message) is inherited and left — `waitForFunction`'s own timeout is the bound. |
 | **S5** nested-embed mechanism unmeasured | **INCORPORATED** | Reworded to state the mechanism as EXPECTED/UNMEASURED, keeping the conclusion. Not measured: it belongs to `nid_zqaxj18jbxwnazzz8aeggz91u_e`, which is out of scope. |
 | **S6** CLAUDE.md duplicates the limits | **INCORPORATED** | Bullet trimmed to identity + shape + takeover + "limits are documented ONCE, on the module". |
 | NIT `getCache(path): unknown \| null` | **MOOT** | The whole `metadataCache` typing is deleted with the wait. |
@@ -108,8 +113,9 @@ Nothing was rejected: every finding was either correct or made moot by the B1 fi
 ## Test evidence (iteration 1)
 
 - `npm run lint`: 0 errors, 1 pre-existing warning. `npm run build`: clean.
-- **Full suite: 4 consecutive runs, 49 passed each** (`.tmp/full-{1..4}.log`) — 48 pre-existing + 1
-  new case.
+- **Full suite: 8 consecutive runs, 49 passed each** (`.tmp/final-full-{1..8}.log`) — 48
+  pre-existing + 1 new case. An EARLIER round of 6 runs was 5 green + 1 red; that red is the
+  spec-local race described above and is what `waitUntilIndexed` fixed. Reported, not buried.
 - Plus, targeted at the cache race: 6 pre-fix runs of `foldable-embeds.e2e.ts` (2 red), 8 post-fix
   (all green), 6 instrumented (all green, takeover firing twice), 6 runs of
   `reading-mode-fold-key.e2e.ts` (all green, 0 cold derivations).
@@ -120,8 +126,9 @@ Nothing was rejected: every finding was either correct or made moot by the B1 fi
    strictly inside `nid_z4jq…`/line-key territory and is not a regression.
 2. A STALE (not cold) cache after a very fast edit→re-render could misattribute, as the line key
    always did. Not reproduced.
-3. `reading-mode-fold-key.e2e.ts` is not COLD-proof by construction, only by measurement (0/6). If
-   it ever flakes on slower CI, the fix is a spec-local index wait, not a global one.
+3. `reading-mode-fold-key.e2e.ts` starts from an INDEXED note (`waitUntilIndexed`), so it does not
+   cover the cold window; `foldable-embeds.e2e.ts` does, by construction. If the boot race is ever
+   to be covered TOGETHER with an edit, the product needs the re-key-on-cache-warm option above.
 4. No unit tests — none can exist here (`nid_lcehddb2tdcq6qxztmhvhpgga_e` is open for a runner).
    `EmbedFoldKeys` and `FoldStateStore.adoptRecordingOf` are pure and are the first candidates.
 5. Key strings are not escaped: a `sourcePath` or link containing `::` could in theory collide.
