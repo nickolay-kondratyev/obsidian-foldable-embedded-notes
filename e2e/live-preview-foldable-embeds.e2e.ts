@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
+import { expectFolded } from "./foldAssertions";
 import { ObsidianHarness } from "./obsidianHarness";
 
 /**
@@ -63,9 +64,7 @@ const EMBED_MARKED = 1;
 const EMBED_INLINE_MARKED = 2;
 
 const CLS_FOLDABLE = "fen-embed";
-const CLS_FOLDED = "fen-folded";
 const CLS_COLLAPSED = "is-collapsed";
-const FOLDED_RE = new RegExp(`\\b${CLS_FOLDED}\\b`);
 const COLLAPSED_RE = new RegExp(`\\b${CLS_COLLAPSED}\\b`);
 
 let harness: ObsidianHarness;
@@ -120,7 +119,7 @@ function lineEndsWithDash(nth: number): Promise<boolean> {
 
 test("unmarked embed renders unfolded, with a visible body and a chevron", async () => {
 	const unmarked = embeds().nth(EMBED_UNMARKED);
-	await expect(unmarked).not.toHaveClass(FOLDED_RE);
+	await expectFolded(unmarked, false);
 	await expect(unmarked.locator(".markdown-embed-content").first()).toBeVisible();
 	await expect(unmarked.locator(".fen-collapse-icon svg")).toBeAttached();
 });
@@ -130,33 +129,33 @@ test("clicking the title folds the unmarked embed, clicking again unfolds it", a
 	const title = unmarked.locator(".markdown-embed-title");
 
 	await title.click();
-	await expect(unmarked).toHaveClass(FOLDED_RE);
+	await expectFolded(unmarked, true);
 	// Prove the CSS collapses the RIGHT element, not merely that a class is present.
 	await expect(unmarked.locator(".markdown-embed-content").first()).toBeHidden();
 	await expect(unmarked.locator(".fen-collapse-icon")).toHaveClass(COLLAPSED_RE);
 
 	await title.click();
-	await expect(unmarked).not.toHaveClass(FOLDED_RE);
+	await expectFolded(unmarked, false);
 	await expect(unmarked.locator(".markdown-embed-content").first()).toBeVisible();
 });
 
 test("whole-line `![[child]]-` folds by default with the dash hidden", async () => {
 	const marked = embeds().nth(EMBED_MARKED);
-	await expect(marked).toHaveClass(FOLDED_RE);
+	await expectFolded(marked, true);
 	await expect(marked.locator(".markdown-embed-content").first()).toBeHidden();
 	await expect.poll(() => lineEndsWithDash(EMBED_MARKED)).toBe(false);
 });
 
 test("the FIRST click on a default-folded marked embed UNFOLDS it", async () => {
 	const marked = embeds().nth(EMBED_MARKED);
-	await expect(marked).toHaveClass(FOLDED_RE);
+	await expectFolded(marked, true);
 
 	await marked.locator(".markdown-embed-title").click();
 
 	// Guards the `effectiveFold` rule: toggling must invert the EFFECTIVE state
 	// (marker default included), not an absent explicit state — otherwise the first
 	// click would dispatch "fold" on an already-folded embed and look dead.
-	await expect(marked).not.toHaveClass(FOLDED_RE);
+	await expectFolded(marked, false);
 });
 
 test("the marker dash is revealed while the cursor is on its line", async () => {
@@ -171,44 +170,44 @@ test("a mid-paragraph `![[child]]-` is foldable but keeps its literal dash", asy
 	const inlineMarked = embeds().nth(EMBED_INLINE_MARKED);
 	// AC3: only a WHOLE-LINE marker folds by default in Live Preview. The embed is
 	// still click-foldable; only the fold-by-default marker is inert here.
-	await expect(inlineMarked).not.toHaveClass(FOLDED_RE);
+	await expectFolded(inlineMarked, false);
 	await expect.poll(() => lineTextOfEmbed(EMBED_INLINE_MARKED)).toContain("- tail text.");
 
 	await inlineMarked.locator(".markdown-embed-title").click();
-	await expect(inlineMarked).toHaveClass(FOLDED_RE);
+	await expectFolded(inlineMarked, true);
 	await inlineMarked.locator(".markdown-embed-title").click();
-	await expect(inlineMarked).not.toHaveClass(FOLDED_RE);
+	await expectFolded(inlineMarked, false);
 });
 
 test("fold state survives an edit that shifts every position below it", async () => {
 	await embeds().nth(EMBED_UNMARKED).locator(".markdown-embed-title").click();
-	await expect(embeds().nth(EMBED_UNMARKED)).toHaveClass(FOLDED_RE);
+	await expectFolded(embeds().nth(EMBED_UNMARKED), true);
 	// The MARKED embed was explicitly UNfolded by an earlier test. Keeping it that way is
 	// the falsifiable direction: its marker default is "folded", so if the edit lost the
 	// explicit anchor the fold rule would fall back to the marker and re-fold it.
 	// (Re-folding it here instead would assert nothing — explicit and default would agree.)
-	await expect(embeds().nth(EMBED_MARKED)).not.toHaveClass(FOLDED_RE);
+	await expectFolded(embeds().nth(EMBED_MARKED), false);
 
 	await harness.replaceRange("inserted\n\n", { line: LINE_UNMARKED, ch: 0 });
 
-	await expect(embeds().nth(EMBED_UNMARKED)).toHaveClass(FOLDED_RE);
-	await expect(embeds().nth(EMBED_MARKED)).not.toHaveClass(FOLDED_RE);
+	await expectFolded(embeds().nth(EMBED_UNMARKED), true);
+	await expectFolded(embeds().nth(EMBED_MARKED), false);
 });
 
 test("typing at the START of a folded embed's line keeps its fold state", async () => {
 	// Re-fold the marked embed (the previous test deliberately left it unfolded).
 	await embeds().nth(EMBED_MARKED).locator(".markdown-embed-title").click();
-	await expect(embeds().nth(EMBED_MARKED)).toHaveClass(FOLDED_RE);
+	await expectFolded(embeds().nth(EMBED_MARKED), true);
 	// The fold anchor is a zero-length position at the line start; text inserted there
 	// maps the anchor AFTER the inserted text, so the lookup must be line-RANGE based.
 	const markedLine = await currentLineOf("![[child]]-");
 	await harness.replaceRange("x", { line: markedLine, ch: 0 });
-	await expect(embeds().nth(EMBED_MARKED)).toHaveClass(FOLDED_RE);
+	await expectFolded(embeds().nth(EMBED_MARKED), true);
 
 	// Restore the line: `x![[child]]-` is (correctly) no longer a whole-line marker,
 	// so leaving it would silently disarm the marker for every later test.
 	await harness.replaceRange("", { line: markedLine, ch: 0 }, { line: markedLine, ch: 1 });
-	await expect(embeds().nth(EMBED_MARKED)).toHaveClass(FOLDED_RE);
+	await expectFolded(embeds().nth(EMBED_MARKED), true);
 });
 
 test("a code-span `![[child]]-` produces no embed widget and stays literal", async () => {
@@ -241,9 +240,9 @@ test("disabling the plugin strips its injected DOM, and re-enabling rewires clic
 
 	// Fold state is per-view CM state, so a reload starts clean: the unmarked embed is
 	// unfolded again and one click must fold it (proving the title was really rewired).
-	await expect(embeds().nth(EMBED_UNMARKED)).not.toHaveClass(FOLDED_RE);
+	await expectFolded(embeds().nth(EMBED_UNMARKED), false);
 	await embeds().nth(EMBED_UNMARKED).locator(".markdown-embed-title").click();
-	await expect(embeds().nth(EMBED_UNMARKED)).toHaveClass(FOLDED_RE);
+	await expectFolded(embeds().nth(EMBED_UNMARKED), true);
 });
 
 test("in plain Source mode the marker dash renders literally", async () => {
@@ -270,21 +269,21 @@ test("clicking a NESTED embed's title never folds the embed it sits inside", asy
 	const outer = page.locator(`.cm-content .internal-embed[src="${NESTED_CHILD_NAME}"]`);
 	const nested = outer.locator(`.internal-embed[src="${NESTED_GRANDCHILD_NAME}"]`);
 	await expect(nested.locator(".markdown-embed-title")).toBeAttached();
-	await expect(outer).not.toHaveClass(FOLDED_RE);
+	await expectFolded(outer, false);
 
 	await nested.locator(".markdown-embed-title").click();
 
 	// `posAtDOM` on a nested embed resolves to the position of the OUTER embed's widget,
 	// i.e. the outer line — so an unscoped Live Preview sync would fold the PARENT here.
-	await expect(outer).not.toHaveClass(FOLDED_RE);
+	await expectFolded(outer, false);
 	// The nested embed still folds: an embed BODY is rendered through the markdown
 	// post-processor even inside the editor, so the reading-mode path owns it — which is
 	// exactly why Live Preview must leave nested embeds alone rather than wire them twice.
-	await expect(nested).toHaveClass(FOLDED_RE);
+	await expectFolded(nested, true);
 
 	// ...and the outer embed itself is still foldable by its own title.
 	await outer.locator(".markdown-embed-title").first().click();
-	await expect(outer).toHaveClass(FOLDED_RE);
+	await expectFolded(outer, true);
 });
 
 /**

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import type { Locator, Page } from "@playwright/test";
+import type { ElementHandle, Locator, Page } from "@playwright/test";
+import { CLS_FOLDED, expectFolded } from "./foldAssertions";
 import { ObsidianHarness } from "./obsidianHarness";
 
 /**
@@ -16,6 +17,8 @@ import { ObsidianHarness } from "./obsidianHarness";
 test.describe.configure({ mode: "serial" });
 
 const PARENT_NOTE_PATH = "parent.md";
+/** Any OTHER dev-vault note: the detour that forces `parent.md` to be re-rendered. */
+const SIBLING_NOTE_PATH = "sibling.md";
 const NEGATIVE_NOTE_PATH = "marker-negative.md";
 /** Embeds the SAME note twice (independent fold state). */
 const TWINS_NOTE_PATH = "twins.md";
@@ -24,7 +27,6 @@ const REF_PARENT_NOTE_PATH = "ref-parent.md";
 const REF_CHILD_NOTE_PATH = "ref-child.md";
 
 const CLS_FOLDABLE = "fen-embed";
-const CLS_FOLDED = "fen-folded";
 const CLS_COLLAPSED = "is-collapsed";
 
 let harness: ObsidianHarness;
@@ -72,16 +74,37 @@ function nextSiblingText(embed: Locator): Promise<string> {
 	return embed.evaluate((node) => node.nextSibling?.textContent ?? "");
 }
 
+/**
+ * The live DOM node a locator resolves to, for identity comparisons ({@link isSameElement}).
+ * Throws instead of returning null: comparing two nothings would silently "prove" whatever
+ * the caller wanted.
+ */
+async function elementOf(embed: Locator): Promise<ElementHandle<SVGElement | HTMLElement>> {
+	const handle = await embed.elementHandle();
+	if (handle === null) {
+		throw new Error("e2e: locator resolved to no element — an identity comparison would be vacuous");
+	}
+	return handle;
+}
+
+/** Whether both handles point at the SAME live DOM node (`===` evaluated in the page). */
+function isSameElement(
+	first: ElementHandle<SVGElement | HTMLElement>,
+	second: ElementHandle<SVGElement | HTMLElement>,
+): Promise<boolean> {
+	return page.evaluate(([a, b]) => a === b, [first, second]);
+}
+
 test("unmarked embed renders unfolded with its body visible", async () => {
 	const unmarked = foldableEmbeds().nth(0);
-	await expect(unmarked).not.toHaveClass(new RegExp(`\\b${CLS_FOLDED}\\b`));
+	await expectFolded(unmarked, false);
 	// Baseline for the folded-hidden assertion below: the populated body div is visible.
 	await expect(unmarked.locator(".markdown-embed-content").first()).toBeVisible();
 });
 
 test("`![[child]]-` renders folded, body hidden, no visible dash", async () => {
 	const marked = foldableEmbeds().nth(1);
-	await expect(marked).toHaveClass(new RegExp(`\\b${CLS_FOLDED}\\b`));
+	await expectFolded(marked, true);
 	// Prove the CSS collapses the RIGHT element: the populated body is actually
 	// hidden (not merely that the class is present). Non-tautological — the
 	// unfolded embed above asserts the same locator is visible.
@@ -102,28 +125,33 @@ test("chevron is present and reflects fold state", async () => {
 test("clicking the title folds, then unfolds", async () => {
 	const embed = foldableEmbeds().nth(0);
 	const title = embed.locator(".markdown-embed-title");
-	const foldedRe = new RegExp(`\\b${CLS_FOLDED}\\b`);
 
 	await title.click();
-	await expect(embed).toHaveClass(foldedRe);
+	await expectFolded(embed, true);
 	await expect(embed.locator(".fen-collapse-icon")).toHaveClass(new RegExp(`\\b${CLS_COLLAPSED}\\b`));
 
 	await title.click();
-	await expect(embed).not.toHaveClass(foldedRe);
+	await expectFolded(embed, false);
 });
 
-test("fold state survives a reading -> editing -> reading round-trip", async () => {
-	const foldedRe = new RegExp(`\\b${CLS_FOLDED}\\b`);
-	// Fold the first (unmarked) embed, then round-trip the view mode.
+test("fold state survives leaving the note and coming back", async () => {
+	// Fold the first (unmarked) embed, then leave for another note and return, which is
+	// what actually discards and rebuilds the reading-view DOM (see
+	// `reopenThroughOtherFile`): only the session fold store can bring the fold back.
 	await foldableEmbeds().nth(0).locator(".markdown-embed-title").click();
-	await expect(foldableEmbeds().nth(0)).toHaveClass(foldedRe);
+	await expectFolded(foldableEmbeds().nth(0), true);
+	const embedBeforeReopen = await elementOf(foldableEmbeds().nth(0));
 
-	await harness.setMarkdownViewMode("source");
+	await harness.reopenThroughOtherFile(PARENT_NOTE_PATH, SIBLING_NOTE_PATH);
 	await harness.setMarkdownViewMode("preview");
-
-	// Re-rendered from scratch; the session store must restore the manual fold.
 	await expect(foldableEmbeds().nth(0)).toBeAttached();
-	await expect(foldableEmbeds().nth(0)).toHaveClass(foldedRe);
+
+	// Asserted FIRST, and about DOM-node identity rather than about the fold: without it this
+	// test could silently regress to the in-place shape it used to have (a mode round-trip on
+	// the open file), where the same element simply never goes away and the store is never
+	// consulted.
+	expect(await isSameElement(embedBeforeReopen, await elementOf(foldableEmbeds().nth(0)))).toBe(false);
+	await expectFolded(foldableEmbeds().nth(0), true);
 });
 
 test("strict-marker negative `![[child]]-x` stays unfolded with the dash visible", async () => {
@@ -131,8 +159,7 @@ test("strict-marker negative `![[child]]-x` stays unfolded with the dash visible
 	await harness.setMarkdownViewMode("preview");
 
 	const embed = foldableEmbeds().first();
-	await expect(embed).toBeAttached();
-	await expect(embed).not.toHaveClass(new RegExp(`\\b${CLS_FOLDED}\\b`));
+	await expectFolded(embed, false);
 	// The literal dash (and its glued `x`) must remain in the trailing text node.
 	expect(await nextSiblingText(embed)).toMatch(/^-x/);
 });
@@ -142,11 +169,10 @@ test("two embeds of the SAME note fold independently", async () => {
 	await harness.setMarkdownViewMode("preview");
 	await expect(foldableEmbeds().nth(1)).toBeAttached();
 
-	const foldedRe = new RegExp(`\\b${CLS_FOLDED}\\b`);
 	// Fold only the FIRST occurrence; the second (same note) must be unaffected.
 	await foldableEmbeds().nth(0).locator(".markdown-embed-title").click();
-	await expect(foldableEmbeds().nth(0)).toHaveClass(foldedRe);
-	await expect(foldableEmbeds().nth(1)).not.toHaveClass(foldedRe);
+	await expectFolded(foldableEmbeds().nth(0), true);
+	await expectFolded(foldableEmbeds().nth(1), false);
 });
 
 test("heading- and block-ref `![[note#...]]-` fold by default with the dash stripped", async () => {
@@ -154,12 +180,11 @@ test("heading- and block-ref `![[note#...]]-` fold by default with the dash stri
 	await harness.setMarkdownViewMode("preview");
 	await expect(foldableEmbeds().nth(1)).toBeAttached();
 
-	const foldedRe = new RegExp(`\\b${CLS_FOLDED}\\b`);
 	const headingEmbed = foldableEmbeds().nth(0); // ![[ref-child#Section A]]-
 	const blockEmbed = foldableEmbeds().nth(1); // ![[ref-child#^blockid]]-
 
-	await expect(headingEmbed).toHaveClass(foldedRe);
-	await expect(blockEmbed).toHaveClass(foldedRe);
+	await expectFolded(headingEmbed, true);
+	await expectFolded(blockEmbed, true);
 	expect(await nextSiblingText(headingEmbed)).not.toMatch(/^-/);
 	expect(await nextSiblingText(blockEmbed)).not.toMatch(/^-/);
 });
