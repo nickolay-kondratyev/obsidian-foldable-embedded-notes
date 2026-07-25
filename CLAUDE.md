@@ -48,8 +48,10 @@ those genuinely differ per mode.
   weak positional key (`L…`/`S…` locator, so keys never collide) which the first render that
   CAN derive an occurrence key takes over, via `FoldStateStore.adoptRecordingOf`. A NESTED
   embed states its occurrence in the CHILD note, so it has no identity of its own — its key is
-  QUALIFIED by its host's (`<hostKey>::in::<ownKey>`, `nestedIn`). What the key does and does
-  NOT survive is documented ONCE, on the module.
+  QUALIFIED by its host's (`<hostKey>::in::<ownKey>`, `nestedIn`). Its two halves warm up
+  INDEPENDENTLY (MEASURED), so a key carries a LIST of superseded keys — every combination of
+  weak/strong halves — and the takeover tries them all. What the key does and does NOT survive
+  is documented ONCE, on the module.
 - `src/embedFoldKeyRegistry.ts` — the host lookup behind that: every embed span is registered
   SYNCHRONOUSLY in the post-processor and its key derived LAZILY (and memoised) on first use.
   That is what makes the lookup ORDERING-FREE — an embed BODY is post-processed only after the

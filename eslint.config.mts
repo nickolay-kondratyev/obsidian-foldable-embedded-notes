@@ -18,6 +18,9 @@ export default defineConfig(
 		// hold build artifacts, not lint targets.
 		'.tmp',
 		'.dev-vault',
+		// Scratch git worktrees (CLAUDE.md puts them here): a full second copy of the repo,
+		// which eslint would otherwise lint — and fail on, since it sits outside tsconfig.
+		'.worktree',
 		// Exploration artifacts (throwaway prototypes kept for reference), not shipped source.
 		'.ai_out',
 		// Playwright/Node e2e harness: the obsidianmd plugin ruleset (mobile-safety,

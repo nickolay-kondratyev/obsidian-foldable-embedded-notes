@@ -15,11 +15,12 @@ import { captureElement, expectFreshElement } from "./reRenderGuard";
  * nested key's SUPERSEDED half — brings it across. That takeover is what this spec guards;
  * nothing else here is new coverage.
  *
- * Own Obsidian instance, and deliberately NO `waitUntilIndexed` before the fold: the boot
- * race IS the subject, and it cannot be forced — a boot that happens to be warm makes this
- * spec pass trivially. It is therefore a GUARD, not a proof; its falsifiability was measured
- * by reverting the takeover (see the implementation write-up), exactly as the top-level
- * cold-cache takeover was verified before it.
+ * The cold window is INJECTED (`ObsidianHarness.withUnindexedNote`) rather than raced for.
+ * MEASURED first: by the time this harness has a workspace and the plugin enabled, the cache
+ * already answers for every fixture, so a spec that just opens a note "early" is green even
+ * with the takeover removed — vacuous. Hiding the host note from `getCache` for the duration
+ * of the first render reproduces the same product state deterministically, and the spec is
+ * RED without the takeover (verified by reverting it).
  */
 
 test.describe.configure({ mode: "serial" });
@@ -71,18 +72,20 @@ async function waitForNestedEmbedWired(): Promise<void> {
 	await expect(nestedEmbed().locator(".fen-collapse-icon")).toBeAttached();
 }
 
-test("a nested embed folded at app start stays folded once the host is indexed", async () => {
-	// GIVEN: the very first render after launch — the metadata cache may still be cold, so the
-	// host (and with it the nested embed) can only be keyed positionally.
-	await harness.openFile(HOST_NOTE_PATH);
-	await harness.setMarkdownViewMode("preview");
-	await waitForNestedEmbedWired();
-	await nestedEmbed().locator(".markdown-embed-title").click();
-	await expectFolded(nestedEmbed(), true);
-	const foldedBeforeReopen = await captureElement(nestedEmbed());
+test("a nested embed folded while the host is UNINDEXED stays folded once it is indexed", async () => {
+	// GIVEN: the host note is rendered and folded while the cache cannot answer for it, so the
+	// host — and with it the nested embed — can only be keyed positionally.
+	const foldedBeforeReopen = await harness.withUnindexedNote(HOST_NOTE_PATH, async () => {
+		await harness.openFile(HOST_NOTE_PATH);
+		await harness.setMarkdownViewMode("preview");
+		await waitForNestedEmbedWired();
+		await nestedEmbed().locator(".markdown-embed-title").click();
+		await expectFolded(nestedEmbed(), true);
+		return captureElement(nestedEmbed());
+	});
 
-	// WHEN: the index has answered for the host note and the note is rebuilt from scratch, so
-	// the host is now keyed by OCCURRENCE and the nested key changes with it.
+	// WHEN: the cache answers again and the note is rebuilt from scratch, so the host is now
+	// keyed by OCCURRENCE and the nested key changes with it.
 	await harness.waitUntilIndexed(HOST_NOTE_PATH);
 	await harness.reopenThroughOtherFile(HOST_NOTE_PATH, DETOUR_NOTE_PATH);
 	await harness.setMarkdownViewMode("preview");

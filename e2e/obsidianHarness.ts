@@ -238,6 +238,42 @@ export class ObsidianHarness {
 	}
 
 	/**
+	 * Runs `body` while the metadata cache answers NOTHING for `vaultPath` — the COLD window
+	 * Obsidian genuinely has for the first render(s) after launch, made deterministic.
+	 *
+	 * WHY the injection: that window cannot be reached by timing. MEASURED on Obsidian 1.12.7 —
+	 * by the time this harness has a workspace and the plugin enabled, `getCache` already
+	 * answers for every fixture, so a spec that merely opens a note "early" is green for the
+	 * wrong reason. This replaces exactly the ONE call the plugin makes to identify an embed
+	 * ({@link ObsidianApp.metadataCache.getCache}, see `main.ts`), for exactly ONE path, and
+	 * restores it even if `body` throws — no product code knows it is under test.
+	 */
+	async withUnindexedNote<T>(vaultPath: string, body: () => Promise<T>): Promise<T> {
+		await this.page.evaluate((targetPath) => {
+			const cache = window.app.metadataCache;
+			if (cache.__fenOriginalGetCache !== undefined) {
+				throw new Error(`e2e: metadata cache already hidden: path=[${targetPath}]`);
+			}
+			const original = cache.getCache.bind(cache);
+			cache.__fenOriginalGetCache = original;
+			cache.getCache = (path: string) => (path === targetPath ? null : original(path));
+		}, vaultPath);
+		try {
+			return await body();
+		} finally {
+			await this.page.evaluate(() => {
+				const cache = window.app.metadataCache;
+				const original = cache.__fenOriginalGetCache;
+				if (original === undefined) {
+					throw new Error("e2e: metadata cache was not hidden");
+				}
+				cache.getCache = original;
+				delete cache.__fenOriginalGetCache;
+			});
+		}
+	}
+
+	/**
 	 * Re-opens `vaultPath` after a detour through `viaVaultPath`, so its view is REBUILT FROM
 	 * SCRATCH — the rendered DOM of the note under test is discarded while the other file is
 	 * open and re-created on the way back.

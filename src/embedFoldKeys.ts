@@ -26,17 +26,22 @@ export interface EmbedOccurrence {
  *
  * Two fields because the identity is only as good as the metadata cache behind it: until the
  * vault index answers, an embed can only be keyed by POSITION, and the fold the user made in
- * that window is recorded under that weaker key. {@link superseded} is how the first render
- * that CAN derive the occurrence key reclaims it.
+ * that window is recorded under that weaker key. {@link supersededKeys} is how the first
+ * render that CAN derive the occurrence key reclaims it.
  */
 export interface EmbedFoldKey {
 	/** The key this embed is recorded under from now on. */
 	readonly current: string;
 	/**
-	 * The positional key an EARLIER render of this same embed would have used while the
-	 * metadata cache was still cold — null when {@link current} IS that positional key.
+	 * Every key an EARLIER, COLDER render of this same embed could have recorded a fold under,
+	 * excluding {@link current} — empty when this render is itself the coldest possible one.
+	 *
+	 * A LIST, not one key, because a NESTED embed has two independently cache-dependent halves
+	 * (its host's key and its own, see {@link EmbedFoldKeys.nestedIn}) and MEASURED on Obsidian
+	 * 1.12.7 they warm up SEPARATELY — a render can have a cold host and a warm own key. Only
+	 * one of the combinations can hold a recording, so the caller simply tries them all.
 	 */
-	readonly superseded: string | null;
+	readonly supersededKeys: readonly string[];
 }
 
 /** One embed as the metadata cache sees it, reduced to what the key needs. */
@@ -68,8 +73,9 @@ interface CachedOccurrence {
  * index is not built yet and `getCache` answers nothing) therefore cannot produce this key at
  * all, and those embeds fall back to the positional key below. So that a fold made in that
  * window is not simply LOST — it would be, and the line key this replaces kept it — every
- * occurrence key also reports the positional key it {@link EmbedFoldKey.superseded}, and the
- * first render that can derive an occurrence key takes that recording over.
+ * occurrence key also reports the positional key it supersedes
+ * ({@link EmbedFoldKey.supersededKeys}), and the first render that can derive an occurrence
+ * key takes that recording over.
  *
  * WHAT IT STILL DOES NOT SURVIVE, honestly:
  * - Deleting an embed makes the next embed of the SAME link inherit its ordinal, and its fold
@@ -87,10 +93,12 @@ interface CachedOccurrence {
  * NESTED embeds (an embed inside an embed BODY) get none of the above on their own: their
  * occurrence is stated in the CHILD note, so every occurrence of the same host renders the
  * identical `sourcePath`, `src`, section text and index — one shared key, and folding one
- * folded them all (ticket nid_zqaxj18jbxwnazzz8aeggz91u_e; MEASURED: `ctx.getSectionInfo`
- * answers null for an embed body, so they all take the `S<hash>` fallback). What tells them
- * apart is the HOST they are rendered inside, so a nested embed's key is its own key
- * QUALIFIED by its host's — see {@link nestedIn} and `EmbedFoldKeyRegistry`.
+ * folded them all (ticket nid_zqaxj18jbxwnazzz8aeggz91u_e). That holds whichever derivation
+ * the own key takes: MEASURED on 1.12.7, `ctx.getSectionInfo` answers null for some embed
+ * bodies (`S<hash>` fallback) and a real section for others (occurrence key) — identical
+ * across the host's occurrences either way. What tells them apart is the HOST they are
+ * rendered inside, so a nested embed's key is its own key QUALIFIED by its host's — see
+ * {@link nestedIn} and `EmbedFoldKeyRegistry`.
  *
  * Key SHAPE: `sourcePath::<locator>::…`, an opaque string whose `sourcePath` prefix is
  * parseable (per-file invalidation later) and whose locator field says which derivation
@@ -115,7 +123,7 @@ export class EmbedFoldKeys {
 	keyFor(occurrence: EmbedOccurrence): EmbedFoldKey {
 		const cached = this.cachedOccurrenceOf(occurrence);
 		if (cached === null) {
-			return { current: this.positionalFallbackKey(occurrence), superseded: null };
+			return { current: this.positionalFallbackKey(occurrence), supersededKeys: [] };
 		}
 		const current = [
 			occurrence.sourcePath,
@@ -123,24 +131,29 @@ export class EmbedFoldKeys {
 			cached.link,
 			`#${cached.ordinal}`,
 		].join("::");
-		return { current, superseded: this.positionalFallbackKey(occurrence) };
+		return { current, supersededKeys: [this.positionalFallbackKey(occurrence)] };
 	}
 
 	/**
 	 * `own`, qualified by the key of the HOST embed it is rendered inside — the identity a
 	 * nested embed has no way to state itself (see the note on nesting above).
 	 *
-	 * The superseded key is built from BOTH levels' superseded keys, each falling back to its
-	 * own current one: a nested embed's OWN key never has a superseded half (its section is
-	 * always null, so it is already the fallback key), but its HOST's does — so an earlier,
-	 * colder render of this pair recorded the fold under `<hostFallback>::in::<own>`, and that
-	 * is the key `FoldStateStore.adoptRecordingOf` has to reclaim. Null when the two coincide,
-	 * i.e. when nothing weaker was ever in play.
+	 * The superseded keys are every COMBINATION of the two levels' weaker keys, because the two
+	 * halves warm up independently (MEASURED on Obsidian 1.12.7: a render whose host note is
+	 * not yet indexed can still key the nested embed's own half by occurrence, since that half
+	 * is read from the CHILD note's cache). So the colder render whose recording is to be
+	 * reclaimed may have used a weak host with a strong own key, or the reverse, or both weak —
+	 * one superseded key would silently cover only one of those, and MEASURABLY did not cover
+	 * the one that happens in practice.
 	 */
 	nestedIn(host: EmbedFoldKey, own: EmbedFoldKey): EmbedFoldKey {
 		const current = this.qualify(host.current, own.current);
-		const superseded = this.qualify(host.superseded ?? host.current, own.superseded ?? own.current);
-		return { current, superseded: superseded === current ? null : superseded };
+		const hostKeys = [host.current, ...host.supersededKeys];
+		const ownKeys = [own.current, ...own.supersededKeys];
+		const combinations = hostKeys.flatMap((hostKey) =>
+			ownKeys.map((ownKey) => this.qualify(hostKey, ownKey)),
+		);
+		return { current, supersededKeys: combinations.filter((key) => key !== current) };
 	}
 
 	/**
@@ -160,7 +173,7 @@ export class EmbedFoldKeys {
 	 * widget span, which is Live Preview's business — ticket nid_jdpdpu7w0nfda3y4decz7f6xy_e.
 	 */
 	unseenHostKey(hostSrc: string): EmbedFoldKey {
-		return { current: `${EmbedFoldKeys.UNSEEN_HOST_LOCATOR}::${hostSrc}`, superseded: null };
+		return { current: `${EmbedFoldKeys.UNSEEN_HOST_LOCATOR}::${hostSrc}`, supersededKeys: [] };
 	}
 
 	private qualify(hostKey: string, ownKey: string): string {

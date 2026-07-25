@@ -96,10 +96,11 @@ export class FoldableEmbedsPostProcessor {
 		}
 		const hasFoldMarker = this.stripFoldMarker(embed);
 		const foldKey = pendingKey.resolve();
-		if (foldKey.superseded !== null) {
-			// This render can identify the embed better than an earlier one could; carry over
-			// whatever the user recorded back then (see FoldStateStore.adoptRecordingOf).
-			this.store.adoptRecordingOf(foldKey.superseded, foldKey.current);
+		// This render can identify the embed better than an earlier one could; carry over
+		// whatever the user recorded back then. At most one of the weaker keys can hold a
+		// recording, and the first adoption makes the rest no-ops (FoldStateStore.adoptRecordingOf).
+		for (const supersededKey of foldKey.supersededKeys) {
+			this.store.adoptRecordingOf(supersededKey, foldKey.current);
 		}
 		const key = foldKey.current;
 		const folded = this.store.get(key) ?? foldedByDefault(this.readSettings(), hasFoldMarker);

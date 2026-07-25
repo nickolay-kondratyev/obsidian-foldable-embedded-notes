@@ -11,6 +11,8 @@ node_modules
 # e2e: throwaway working dirs, the generated dev vault and test screenshots
 .tmp
 .dev-vault
+# Scratch git worktrees (CLAUDE.md convention).
+.worktree
 .out
 
 # Don't include the compiled main.js file in the repo.
