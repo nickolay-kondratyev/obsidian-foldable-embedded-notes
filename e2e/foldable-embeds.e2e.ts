@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
-import type { ElementHandle, Locator, Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { CLS_FOLDED, expectFolded } from "./foldAssertions";
 import { ObsidianHarness } from "./obsidianHarness";
+import { captureElement, expectFreshElement } from "./reRenderGuard";
 
 /**
  * Reading-mode foldable-embed feature, driven against a REAL Obsidian.
@@ -74,27 +75,6 @@ function nextSiblingText(embed: Locator): Promise<string> {
 	return embed.evaluate((node) => node.nextSibling?.textContent ?? "");
 }
 
-/**
- * The live DOM node a locator resolves to, for identity comparisons ({@link isSameElement}).
- * Throws instead of returning null: comparing two nothings would silently "prove" whatever
- * the caller wanted.
- */
-async function elementOf(embed: Locator): Promise<ElementHandle<SVGElement | HTMLElement>> {
-	const handle = await embed.elementHandle();
-	if (handle === null) {
-		throw new Error("e2e: locator resolved to no element — an identity comparison would be vacuous");
-	}
-	return handle;
-}
-
-/** Whether both handles point at the SAME live DOM node (`===` evaluated in the page). */
-function isSameElement(
-	first: ElementHandle<SVGElement | HTMLElement>,
-	second: ElementHandle<SVGElement | HTMLElement>,
-): Promise<boolean> {
-	return page.evaluate(([a, b]) => a === b, [first, second]);
-}
-
 test("unmarked embed renders unfolded with its body visible", async () => {
 	const unmarked = foldableEmbeds().nth(0);
 	await expectFolded(unmarked, false);
@@ -140,17 +120,13 @@ test("fold state survives leaving the note and coming back", async () => {
 	// `reopenThroughOtherFile`): only the session fold store can bring the fold back.
 	await foldableEmbeds().nth(0).locator(".markdown-embed-title").click();
 	await expectFolded(foldableEmbeds().nth(0), true);
-	const embedBeforeReopen = await elementOf(foldableEmbeds().nth(0));
+	const embedBeforeReopen = await captureElement(foldableEmbeds().nth(0));
 
 	await harness.reopenThroughOtherFile(PARENT_NOTE_PATH, SIBLING_NOTE_PATH);
 	await harness.setMarkdownViewMode("preview");
 	await expect(foldableEmbeds().nth(0)).toBeAttached();
 
-	// Asserted FIRST, and about DOM-node identity rather than about the fold: without it this
-	// test could silently regress to the in-place shape it used to have (a mode round-trip on
-	// the open file), where the same element simply never goes away and the store is never
-	// consulted.
-	expect(await isSameElement(embedBeforeReopen, await elementOf(foldableEmbeds().nth(0)))).toBe(false);
+	await expectFreshElement(embedBeforeReopen, foldableEmbeds().nth(0));
 	await expectFolded(foldableEmbeds().nth(0), true);
 });
 

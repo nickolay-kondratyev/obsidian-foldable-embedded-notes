@@ -1,7 +1,30 @@
 # IMPLEMENTATION_WITH_SELF_PLAN — PRIVATE working notes
 
-State: **DONE**. Commits `d57f4e3` + `503e624` on `settings-persistence-fix`. Tree clean,
-suite 37/37, lint + build green. Nothing pending.
+State: **DONE (iteration 2 complete)**. Commits `d57f4e3` + `503e624` + the review-response
+commit on `settings-persistence-fix`. Tree clean, suite 37/37, lint + build green. Nothing
+pending.
+
+## Iteration 2 (review response) — what changed and what to know
+
+- 4 OPTIONALs: 2 fully accepted (array-form comment, shared re-render guard), 2 partially
+  accepted (comment softened but NO new assertion for `preventDefault`; doc line added but NO
+  `browser.close()`). Rationale in the PUBLIC file; rejected halves are in
+  `FOLLOW_UP_TICKETS.md`.
+- NEW `e2e/reRenderGuard.ts` owns `captureElement` / `expectFreshElement`. `locator.page()`
+  is how it reaches `page.evaluate` without a `Page` parameter — keep it that way, the
+  helpers stay callable from any spec.
+- The array-form vacuity was RE-MEASURED here, not taken from the review:
+  `.tmp/pw-array-check.mjs` (plain chromium, no Obsidian, ~2s). scalar FAILED, `[array]`
+  PASSED, `not.toBeVisible()` PASSED. Recreate it from the PUBLIC table if ever doubted.
+- Sabotage used for the new guard: in `start-collapsed-setting.e2e.ts` swap
+  `reopenThroughOtherFile(...)` for `setMarkdownViewMode("source")`. Fails with
+  "expected a re-render, but the locator resolved to the SAME DOM node". Revert with
+  `git checkout e2e/start-collapsed-setting.e2e.ts`.
+- DELIBERATELY NOT added: an active-file-unchanged assertion after a title click. It passes
+  with AND without the production code (measured), i.e. it would be vacuous by construction —
+  do not let a future pass add it "for coverage" without first making it fail.
+- Iteration-2 logs: `.tmp/iter-lint*.log`, `.tmp/iter-build*.log`, `.tmp/iter-e2e*.log`,
+  `.tmp/iter-sabotage-identity.log`.
 
 ## Files touched
 

@@ -158,6 +158,78 @@ specs stay green, including the strict `toEqual` one.
 - **Touching `CLAUDE.md`** — no stable architectural knowledge changed. The Playwright/Obsidian
   facts I measured belong next to the code that depends on them, and that is where they are.
 
+---
+
+# Iteration 2 — review response (review verdict: READY, 0 MUST-FIX, 4 OPTIONAL)
+
+3 of 4 optionals ACCEPTED, 1 REJECTED (with the rejected part re-filed as a follow-up).
+Suite after the changes: **37 passed**, lint 0 errors, build OK, tree clean.
+
+### OPTIONAL-1 — `preventDefault`/`stopPropagation` coverage hole — **PARTIALLY ACCEPTED**
+
+- **ACCEPTED**: the comment at `src/embedFoldDom.ts:onTitleClick` no longer makes an
+  unverified causal claim. It now names BOTH defaults being suppressed (Obsidian's "open the
+  embedded note", and CM6 placing a cursor in Live Preview, where the title sits inside
+  `.cm-content`) and then says out loud that neither is covered by a test and that the suite
+  measured green with both calls deleted on Obsidian 1.12.7 — so they are a deliberate
+  defence, not an observed fix, and must not be dropped on the strength of a green suite.
+- **REJECTED**: adding the suggested active-file-unchanged assertion NOW. Reason: it is
+  measured to pass in BOTH worlds (with and without the two calls), so it would be a
+  knowingly non-falsifiable assertion — precisely the thing this whole ticket exists to
+  remove. Worse, "no navigation happened" is the absence of an async event: an immediate
+  read only ever proves "not yet", so the assertion would be weak AND racy. The Live Preview
+  cursor half is the genuinely uncovered one and needs a real fixture, not a one-liner.
+  Filed in `FOLLOW_UP_TICKETS.md` instead.
+
+### OPTIONAL-2 — the array-form vacuity — **ACCEPTED** (highest-value item here)
+
+`e2e/foldAssertions.ts`'s doc now says the vacuity differs per matcher **and per argument
+shape of the same matcher**, with the concrete rule: `not.toHaveClass([/re/])` (ARRAY form)
+DOES pass on a zero-element locator, the scalar form does not — and an explicit
+"do not simplify this to the array form without the guard above".
+
+**Re-measured by me, not inherited** (`.tmp/pw-array-check.mjs`, plain chromium, 1.5s
+timeouts, locator matching zero elements):
+
+| assertion | result |
+|---|---|
+| `not.toHaveClass(/re/)` (scalar — what this repo uses) | **FAILED** |
+| `not.toHaveClass([/re/])` (array) | **PASSED** ← vacuous |
+| `not.toBeVisible()` | PASSED |
+
+### OPTIONAL-3 — identity guard on the sibling test — **ACCEPTED**
+
+The identity check moved out of `foldable-embeds.e2e.ts` into a shared
+`e2e/reRenderGuard.ts` (`captureElement` + `expectFreshElement`, page obtained via
+`locator.page()`), and BOTH re-render tests now use it. This is DRY-positive: the spec lost
+two local functions, and the WHY ("without this the test can regress to an in-place shape
+where the store is never consulted") is now stated once.
+
+**Proven non-vacuous.** Sabotage: in `start-collapsed-setting.e2e.ts` the
+`reopenThroughOtherFile` call was replaced by the old in-place `setMarkdownViewMode("source")`
+round-trip. Result: `✘ 4 … an explicit unfold beats the setting, across a re-render (39ms)` —
+`Error: expected a re-render, but the locator resolved to the SAME DOM node` (1 failed,
+3 passed). Reverted; full suite green again.
+
+### OPTIONAL-4 — **PARTIALLY ACCEPTED**
+
+- **ACCEPTED**: `readPersistedPluginData`'s doc now names the caller-side OBLIGATION the
+  function cannot enforce — assert a concrete object (`toEqual`/`toMatchObject`); an
+  assertion satisfied BY `null` (`toBeNull`, `not.toEqual`) would go green on "the plugin
+  never wrote anything".
+- **REJECTED**: `browser.close()` on `spawnAndConnect`'s failure path. The reviewer already
+  calls it cosmetic (killing the process drops the transport), and it is not free: `browser`
+  is a `const` inside the `try`, so this means hoisting a `let browser: Browser | undefined`
+  into the function scope — real mutable state bought for no observable behaviour. The
+  failure path was exercised end-to-end in iteration 1 and returns promptly. Follow-up filed.
+
+### Files touched this iteration
+
+- NEW `e2e/reRenderGuard.ts`; `e2e/foldable-embeds.e2e.ts` (uses it, local helpers deleted);
+  `e2e/start-collapsed-setting.e2e.ts` (guard added); `e2e/foldAssertions.ts` (comment);
+  `e2e/obsidianHarness.ts` (comment); `src/embedFoldDom.ts` (comment).
+- No assertion was weakened or removed; test count unchanged at 37.
+
 ## Follow-ups worth a ticket (TOP_LEVEL_AGENT owns ticket creation)
 
 1. **`isFoldedNow` is a non-retrying read** (`start-collapsed-setting.e2e.ts`): a raw

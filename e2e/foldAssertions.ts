@@ -18,6 +18,11 @@ export const FOLDED_RE = new RegExp(`\\b${CLS_FOLDED}\\b`);
  * 15s "element(s) not found" timeout on a class assertion) and independence from a negated
  * matcher's empty-locator behaviour, which differs per matcher — `not.toBeVisible()`, the
  * neighbouring shape, DOES pass on an element that is gone.
+ *
+ * And it differs per ARGUMENT SHAPE of the very same matcher, which is why the scalar regex
+ * below is not an incidental style choice: MEASURED, `not.toHaveClass([/re/])` (the ARRAY
+ * form, which compiles to a different internal expression) DOES pass vacuously on a locator
+ * matching zero elements. Do not "simplify" this to the array form without the guard above.
  */
 export async function expectFolded(embed: Locator, folded: boolean): Promise<void> {
 	if (folded) {

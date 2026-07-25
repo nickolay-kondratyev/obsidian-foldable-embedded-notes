@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import { CLS_FOLDED, expectFolded } from "./foldAssertions";
 import { ObsidianHarness, PLUGIN_ID } from "./obsidianHarness";
+import { captureElement, expectFreshElement } from "./reRenderGuard";
 
 /**
  * The "start embedded notes collapsed" setting, driven against a REAL Obsidian.
@@ -156,6 +157,7 @@ test("reading mode: an explicit unfold beats the setting, across a re-render", a
 	const unmarked = readingEmbeds().nth(EMBED_UNMARKED);
 	await unmarked.locator(".markdown-embed-title").click();
 	await expectFolded(unmarked, false);
+	const embedBeforeReopen = await captureElement(unmarked);
 
 	// Leaving the note and coming back is what genuinely rebuilds the reading-view DOM; a
 	// view-MODE round-trip leaves the same elements in place, so it could not tell the store
@@ -163,9 +165,10 @@ test("reading mode: an explicit unfold beats the setting, across a re-render", a
 	await harness.reopenThroughOtherFile(NOTE_A_PATH, OTHER_NOTE_PATH);
 	await harness.setMarkdownViewMode("preview");
 
-	// Re-rendered from scratch: the session store's explicit choice must still win over
-	// the setting's "start collapsed" default.
+	// Re-rendered from scratch — PROVEN, not assumed, before anything is concluded from it:
+	// the session store's explicit choice must still win over the setting's default.
 	await expect(readingEmbeds().nth(EMBED_UNMARKED)).toBeAttached();
+	await expectFreshElement(embedBeforeReopen, readingEmbeds().nth(EMBED_UNMARKED));
 	await expectFolded(readingEmbeds().nth(EMBED_UNMARKED), false);
 });
 

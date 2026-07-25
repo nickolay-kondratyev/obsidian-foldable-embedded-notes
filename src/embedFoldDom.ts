@@ -69,9 +69,15 @@ export class EmbedFoldDom {
 	}
 
 	/**
-	 * Click-to-fold on a title bar. preventDefault/stopPropagation suppress
-	 * Obsidian's own "open the embedded note" behaviour on the title — without them
-	 * every fold click would also navigate away.
+	 * Click-to-fold on a title bar. preventDefault/stopPropagation are there to stop the click
+	 * ALSO doing what a click on that title otherwise does: Obsidian's own "open the embedded
+	 * note" default, and — in Live Preview, where the title lives inside `.cm-content` —
+	 * CodeMirror placing a cursor at the click position.
+	 *
+	 * HONEST about the evidence: neither effect is covered by a test, and MEASURED against
+	 * Obsidian 1.12.7 the whole e2e suite stays green with both calls deleted. Treat them as a
+	 * deliberate defence, NOT as an observed fix: do not drop them on the strength of a green
+	 * suite, and do not claim more for them than this until something asserts it.
 	 *
 	 * @param options passes Live Preview's `AbortSignal` (its titles outlive the
 	 * plugin); reading mode passes nothing because its title element is created and

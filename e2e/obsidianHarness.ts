@@ -346,6 +346,10 @@ export class ObsidianHarness {
 	 * concrete object against it, so a file that stays unreadable still fails the spec — with
 	 * the poll's own timeout rather than a stray parse error.
 	 *
+	 * That safety is a CALLER-SIDE OBLIGATION this function cannot enforce: assert a concrete
+	 * expected object (`toEqual` / `toMatchObject`). An assertion satisfied BY `null`
+	 * (`toBeNull`, `not.toEqual`) would go green on "the plugin never wrote anything".
+	 *
 	 * Writing the file is not atomic (truncate, then write), so an in-flight save is genuinely
 	 * observable as an empty or half-written file. The short retry below is kept even though
 	 * `expect.poll` would also retry: `settings-persistence.e2e.ts` reads this ONCE without a
