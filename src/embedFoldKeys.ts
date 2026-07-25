@@ -145,6 +145,10 @@ export class EmbedFoldKeys {
 	 * reclaimed may have used a weak host with a strong own key, or the reverse, or both weak —
 	 * one superseded key would silently cover only one of those, and MEASURABLY did not cover
 	 * the one that happens in practice.
+	 *
+	 * One candidate per combination means 2^depth − 1 of them (3 at the real depth 2, 7 at 3) —
+	 * fine while each is a single `Map` lookup, but a reason not to add a third cache-dependent
+	 * component to a key.
 	 */
 	nestedIn(host: EmbedFoldKey, own: EmbedFoldKey): EmbedFoldKey {
 		const current = this.qualify(host.current, own.current);

@@ -153,6 +153,36 @@ vacuity measurement in `.tmp/revert-run{1..6}.log` and `.tmp/probe-run{1..3}.log
 - Reading-mode fold state remains SESSION-only — this ticket is identity, not persistence.
 - No unit-test framework exists in this repo; coverage is the real-Obsidian Playwright suite.
 
+---
+
+# FINAL NIT PASS (re-review verdict READY, 0 BLOCKING / 0 SHOULD-FIX)
+
+Tightly scoped cleanup of the four NITs. No design change, no scope growth, no assertion touched.
+
+| NIT | Disposition |
+|---|---|
+| **N1** 2^N candidate growth not in the code | **DONE** — three lines added to the `nestedIn` doc in `src/embedFoldKeys.ts`: 2^depth − 1 candidates (3 at the real depth 2, 7 at 3), fine while each is one `Map` lookup, and a reason not to add a third cache-dependent key component. |
+| **N2** "at most one weaker key holds a recording" overstated | **DONE** — `src/foldableEmbedsPostProcessor.ts:99-101` now says "in practice only one … if two ever did (two panes rendered at different cache warmth), the first listed wins and the rest are no-ops". No code change; the claim is now true. |
+| **N3** `.gitignore` rewritten CRLF→LF | **DONE** — file restored to its original CRLF bytes (from `68871cf`) with only the two intended lines inserted. `git diff 68871cf -- .gitignore` is now a **2-line addition** (`# Scratch git worktrees (CLAUDE.md convention).` + `.worktree`), no full-file rewrite. |
+| **N4** `__fenOriginalGetCache` on the `ObsidianApp` interface | **DONE** — removed from `e2e/obsidianAppApi.ts`; the stash field now lives in `e2e/obsidianHarness.ts` as a harness-local `type PatchableMetadataCache = ObsidianApp["metadataCache"] & { __fenOriginalGetCache?: … }`, applied as a cast at the two `page.evaluate` seams. `ObsidianApp` again models only Obsidian's API. (A `interface … extends` form does not compile — TS2499, an interface cannot extend an indexed-access type — hence the alias.) |
+
+Nothing rejected. All four were correct and cheap.
+
+## Verification — my own runs, this pass
+
+```
+npm run lint                              exit 0    1 problem (0 errors, 1 warning)
+                                                    obsidianmd/settings-tab/prefer-setting-definitions
+                                                    src/settings/foldableEmbedsSettingTab.ts:12 — PRE-EXISTING
+npm run build                             exit 0
+npx tsc -noEmit -p e2e/tsconfig.json      exit 0    (added: the e2e tree is NOT covered by `npm run build`)
+npm run test:e2e                          exit 0    52 passed (9.4s)
+```
+
+Logs: `.tmp/nits-lint.log`, `.tmp/nits-build.log`, `.tmp/nits-e2e-tsc.log`, `.tmp/nits-e2e.log`.
+Test count unchanged at 52; no spec, assertion or product behaviour was altered by this pass
+(N1/N2 are comments, N3 is line endings, N4 is a compile-time type move).
+
 ## NOT done by design (owned by TOP_LEVEL_AGENT)
 
 `change_log` entry; closing the ticket.

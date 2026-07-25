@@ -5,7 +5,18 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import type { Browser, Page } from "@playwright/test";
 // Also declares the `window.app` global typing the `page.evaluate` callbacks below rely on.
-import type { EditorPosition } from "./obsidianAppApi";
+import type { EditorPosition, ObsidianApp } from "./obsidianAppApi";
+
+/**
+ * Obsidian's metadata cache plus the ONE field {@link ObsidianHarness.withUnindexedNote}
+ * stashes the real `getCache` in while it is replaced; undefined at every other moment.
+ *
+ * Declared HERE and not on {@link ObsidianApp}: that type models Obsidian's own API, and this
+ * field is the harness's, so it must not look like something a caller may rely on.
+ */
+type PatchableMetadataCache = ObsidianApp["metadataCache"] & {
+	__fenOriginalGetCache?: (path: string) => object | null;
+};
 
 /**
  * Launches a REAL Obsidian (Electron) on a throwaway copy of `.dev-vault`,
@@ -250,7 +261,7 @@ export class ObsidianHarness {
 	 */
 	async withUnindexedNote<T>(vaultPath: string, body: () => Promise<T>): Promise<T> {
 		await this.page.evaluate((targetPath) => {
-			const cache = window.app.metadataCache;
+			const cache = window.app.metadataCache as PatchableMetadataCache;
 			if (cache.__fenOriginalGetCache !== undefined) {
 				throw new Error(`e2e: metadata cache already hidden: path=[${targetPath}]`);
 			}
@@ -262,7 +273,7 @@ export class ObsidianHarness {
 			return await body();
 		} finally {
 			await this.page.evaluate(() => {
-				const cache = window.app.metadataCache;
+				const cache = window.app.metadataCache as PatchableMetadataCache;
 				const original = cache.__fenOriginalGetCache;
 				if (original === undefined) {
 					throw new Error("e2e: metadata cache was not hidden");

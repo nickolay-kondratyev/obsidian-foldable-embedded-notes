@@ -2,7 +2,16 @@
 
 Ticket: nid_zqaxj18jbxwnazzz8aeggz91u_e — nested embeds share ONE reading-mode fold key.
 
-## Status: DONE (review iteration 1 incorporated)
+## Status: DONE (review iteration 1 + final NIT pass incorporated)
+
+Final NIT pass: all 4 NITs done, none rejected. lint 0 / build 0 / e2e **52 passed** /
+`tsc -p e2e/tsconfig.json` 0. Two things worth carrying forward:
+- `npm run build` typechecks `src/` ONLY. Any change under `e2e/` needs
+  `npx tsc -noEmit -skipLibCheck -p e2e/tsconfig.json` — the e2e run itself transpiles
+  without typechecking, so a type error there is otherwise invisible.
+- `.gitignore` is CRLF in this repo. Edit it with a byte-level tool (Python), never by
+  rewriting it, or the whole file shows up in the diff.
+
 
 Commits: `ce2e132` specs → `afc21eb` fix → `cc4d59a` ordering+docs → `7418749` F1/F3/F4 +
 first F2 attempt → `21e1e75` F2 done properly (`supersededKeys` list).

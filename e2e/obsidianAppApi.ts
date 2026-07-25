@@ -61,11 +61,6 @@ export interface ObsidianApp {
 	readonly metadataCache: {
 		/** Null until Obsidian has indexed that file — see `ObsidianHarness.waitUntilIndexed`. */
 		getCache(path: string): object | null;
-		/**
-		 * The real {@link getCache}, stashed while `ObsidianHarness.withUnindexedNote` has it
-		 * replaced. Undefined at every other moment — the e2e's own field, not Obsidian's.
-		 */
-		__fenOriginalGetCache?: (path: string) => object | null;
 	};
 	readonly plugins: {
 		readonly plugins: Record<string, unknown>;
