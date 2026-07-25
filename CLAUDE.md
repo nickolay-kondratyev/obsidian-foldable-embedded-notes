@@ -23,7 +23,9 @@ those genuinely differ per mode.
     truth table both modes project, kept in ONE place. The setting makes `![[x]]-` a no-op;
     it never changes marker syntax.
   - `foldableEmbedsSettingsStore.ts` / `foldableEmbedsSettingTab.ts` — load/save over a
-    narrow persistence port; one toggle, saved on change.
+    narrow persistence port; one toggle, saved on change. Saves are SERIALIZED through one
+    promise queue (Obsidian does not await `onChange`) and merge over the RAW loaded
+    `data.json`, so keys this version does not know round-trip instead of being dropped.
   - Both modes read the CURRENT settings through a `ReadSettings` accessor, so a change
     lands on the NEXT render (reopen / mode switch / edit). Deliberately no CM6
     `Compartment` and no forced rerender of open panes.

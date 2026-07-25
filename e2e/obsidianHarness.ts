@@ -68,6 +68,9 @@ const WINDOW_HEIGHT_PX = 800;
 /** App boot → `layoutReady` covers vault index + workspace restore. */
 const WORKSPACE_READY_TIMEOUT_MS = 60_000;
 const PLUGIN_READY_TIMEOUT_MS = 30_000;
+/** Tolerance for reading `data.json` while it is being rewritten — see `readPersistedPluginData`. */
+const PERSISTED_DATA_READ_ATTEMPTS = 5;
+const PERSISTED_DATA_READ_RETRY_MS = 50;
 
 export type { EditorPosition };
 
@@ -305,13 +308,27 @@ export class ObsidianHarness {
 	 * Read from Node, deliberately NOT from `app.plugins.plugins[id].loadData()`: the point
 	 * is to prove a real file was written, and asking the running plugin could be answered
 	 * by in-memory state. Cheap enough to poll — see the specs that wait for a save.
+	 *
+	 * Retries an UNPARSEABLE read: writing the file is not atomic (truncate, then write), so a
+	 * read landing inside a save legitimately sees an empty or half-written file. That is a
+	 * property of the reader's timing, not of the plugin, and must not fail a spec — a save
+	 * that really wrote garbage still fails, since the retries never converge.
 	 */
-	static readPersistedPluginData(): unknown {
+	static async readPersistedPluginData(): Promise<unknown> {
 		const dataFile = path.join(VAULT_COPY_DIR, ".obsidian", "plugins", PLUGIN_ID, "data.json");
-		if (!fs.existsSync(dataFile)) {
-			return null;
+		for (let attempt = 1; ; attempt += 1) {
+			if (!fs.existsSync(dataFile)) {
+				return null;
+			}
+			try {
+				return JSON.parse(fs.readFileSync(dataFile, "utf8"));
+			} catch (error) {
+				if (attempt >= PERSISTED_DATA_READ_ATTEMPTS) {
+					throw error;
+				}
+				await new Promise((resolve) => setTimeout(resolve, PERSISTED_DATA_READ_RETRY_MS));
+			}
 		}
-		return JSON.parse(fs.readFileSync(dataFile, "utf8"));
 	}
 
 	/**
