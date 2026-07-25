@@ -3,7 +3,7 @@ id: nid_drtkfuu5gijr9qjec5tj2o2yh_e
 title: "Live Preview: fold marker inert with a trailing space"
 status: open
 deps: []
-links: []
+links: [nid_ktx90omxm6sqotiude6iliwjn_e]
 created_iso: 2026-07-24T22:25:08Z
 status_updated_iso: 2026-07-24T22:25:08Z
 type: bug

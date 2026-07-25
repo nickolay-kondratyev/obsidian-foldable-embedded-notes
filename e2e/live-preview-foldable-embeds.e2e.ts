@@ -131,16 +131,25 @@ function embeds(): Locator {
 	return page.locator(`.cm-content .internal-embed.${CLS_FOLDABLE}`);
 }
 
+/** The two readings of an embed's `.cm-line` that the assertions below need. */
+interface EmbedLineText {
+	/** Everything the line renders, the embed's own body included. */
+	readonly whole: string;
+	/** Only what is rendered AFTER the embed widget — the raw markdown tail. */
+	readonly afterEmbed: string;
+}
+
 /**
- * Text of the `.cm-line` holding the nth embed. Polled through `page.evaluate` because
- * the relationship (`closest(".cm-line")`) has no locator equivalent, and asserted via
- * `expect.poll` so decoration updates are awaited rather than slept on.
+ * Both readings of the `.cm-line` holding the nth embed, taken in ONE `page.evaluate` because
+ * the relationship (`closest(".cm-line")`) has no locator equivalent — and so the DOM
+ * contract below is stated exactly ONCE. Callers poll it via `expect.poll`, so decoration
+ * updates are awaited rather than slept on.
  *
  * THROWS when the embed has no `.cm-line` ancestor (i.e. Obsidian turned it into a BLOCK
  * widget): returning `""` there would silently satisfy every "the dash is hidden"
  * assertion, so a DOM-shape change must fail loudly instead.
  */
-function lineTextOfEmbed(nth: number): Promise<string> {
+function embedLineText(nth: number): Promise<EmbedLineText> {
 	return embeds()
 		.nth(nth)
 		.evaluate((el) => {
@@ -148,8 +157,21 @@ function lineTextOfEmbed(nth: number): Promise<string> {
 			if (line === null) {
 				throw new Error("e2e: embed has no .cm-line ancestor (block widget?) — assertion would be vacuous");
 			}
-			return line.textContent ?? "";
+			const nodes = Array.from(line.childNodes);
+			const widgetIndex = nodes.findIndex((node) => node.contains(el));
+			return {
+				whole: line.textContent ?? "",
+				afterEmbed: nodes
+					.slice(widgetIndex + 1)
+					.map((node) => node.textContent ?? "")
+					.join(""),
+			};
 		});
+}
+
+/** Text of the `.cm-line` holding the nth embed. */
+function lineTextOfEmbed(nth: number): Promise<string> {
+	return embedLineText(nth).then((text) => text.whole);
 }
 
 /** Whether the embed's line still renders a trailing marker dash. */
@@ -167,19 +189,7 @@ function lineEndsWithDash(nth: number): Promise<boolean> {
  * would otherwise swamp an exact comparison.
  */
 function markdownAfterEmbed(nth: number): Promise<string> {
-	return embeds()
-		.nth(nth)
-		.evaluate((el) => {
-			const line = el.closest(".cm-line");
-			if (line === null) {
-				throw new Error("e2e: embed has no .cm-line ancestor (block widget?) — assertion would be vacuous");
-			}
-			const widgetIndex = Array.from(line.childNodes).findIndex((node) => node.contains(el));
-			return Array.from(line.childNodes)
-				.slice(widgetIndex + 1)
-				.map((node) => node.textContent ?? "")
-				.join("");
-		});
+	return embedLineText(nth).then((text) => text.afterEmbed);
 }
 
 test("unmarked embed renders unfolded, with a visible body and a chevron", async () => {
@@ -417,10 +427,27 @@ function linesEndingWithDash(): Promise<number> {
 	);
 }
 
-/** 0-based line number of the first line whose trimmed text equals `text`. */
+/**
+ * 0-based line number of THE line whose text is exactly `text`, in the note currently open.
+ *
+ * Compares raw lines and THROWS unless there is exactly one match. Callers feed the result
+ * to `replaceRange`, so a wrong pick would silently edit an innocent line and leave every
+ * later assertion in this serial spec failing somewhere else entirely. Two fixture lines
+ * (`![[child]]-` and `![[child]]- `) differ ONLY by a trailing space, so a `trim()`-based
+ * match would resolve both to whichever comes first — luck, not a contract.
+ */
 async function currentLineOf(text: string): Promise<number> {
-	return page.evaluate((needle) => {
+	const matches = await page.evaluate((needle) => {
 		const value = window.app.workspace.getMostRecentLeaf().view.editor.getValue();
-		return value.split("\n").findIndex((line) => line.trim() === needle);
+		return value
+			.split("\n")
+			.map((line, index) => ({ line, index }))
+			.filter((candidate) => candidate.line === needle)
+			.map((candidate) => candidate.index);
 	}, text);
+	const [only, ...extra] = matches;
+	if (only === undefined || extra.length > 0) {
+		throw new Error(`e2e: expected exactly one line equal to [${text}], found [${matches.length}]`);
+	}
+	return only;
 }
