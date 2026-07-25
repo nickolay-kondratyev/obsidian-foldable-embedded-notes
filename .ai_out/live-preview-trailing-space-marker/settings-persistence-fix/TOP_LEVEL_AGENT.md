@@ -13,11 +13,18 @@ Flow: straightforward — IMPLEMENTATION_WITH_SELF_PLAN → IMPLEMENTATION_REVIE
   whitespace.
   - Orchestrator decision: do NOT introduce vitest/jest in this bug fix — cover via e2e, per the
     ticket's own acceptance criteria. Follow-up ticket if the implementer feels strongly.
-- **IMPLEMENTATION_WITH_SELF_PLAN** — launched.
-- **IMPLEMENTATION_REVIEW** — pending.
+- **IMPLEMENTATION_WITH_SELF_PLAN** — done, commit `eebd621`. Regex tolerates `[ \t]*` after the
+  dash; `dashFrom` from the dash's real index; replace still covers exactly the dash (aligned with
+  reading mode, which preserves trailing whitespace). Red-before-green e2e. Full suite 40 passed.
+- **IMPLEMENTATION_REVIEW** — done, commit `e9fe157`. Verdict READY, 0 blocking, 2 SHOULD-FIX (both
+  e2e test-robustness). Reviewer independently disproved the `lastIndexOf` concern.
+- **IMPLEMENTATION_ITERATION** — done, commit `9a4fd0e`. Both SHOULD-FIX accepted (ambiguous line
+  lookup now throws; duplicated `.cm-line` guard extracted). One NIT rejected with rationale.
+  Converged in ONE iteration. Full suite 40 passed.
 
-## Orchestrator responsibilities remaining
+## Closed out
 
-- Commit between phases (add-all, clean tree).
-- ONE `change_log` entry at the very end.
-- Close the ticket with a resolution at the end.
+- Ticket `nid_drtkfuu5gijr9qjec5tj2o2yh_e` — resolution noted, closed.
+- Follow-up filed: `nid_ktx90omxm6sqotiude6iliwjn_e` (indented `- ![[x]]-` folds in reading mode but
+  not Live Preview).
+- change_log entry `6hvvnjkc5hno6d8q30vdafloa`.
