@@ -1,11 +1,11 @@
 ---
 id: nid_78cl6bo3t8umqbndughsbjez9_e
 title: "Reading mode: unresolved embeds accumulate MutationObservers without bound"
-status: open
+status: in_progress
 deps: []
 links: [nid_1ngosntduq5baizn9b7056h34_e]
 created_iso: 2026-07-25T00:44:49Z
-status_updated_iso: 2026-07-25T00:44:49Z
+status_updated_iso: 2026-07-25T08:04:14Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
