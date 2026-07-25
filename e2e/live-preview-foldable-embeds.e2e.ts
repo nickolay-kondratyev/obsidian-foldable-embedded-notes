@@ -261,6 +261,9 @@ test("the marker dash is revealed while a selection spans its line", async () =>
 test("a BACKWARDS selection spanning the marked line reveals the dash too", async () => {
 	// Dragging upwards puts `head` before `anchor`; reveal must key off the range's span.
 	await harness.setSelection({ line: LINE_BELOW_MARKED, ch: 0 }, { line: LINE_ABOVE_MARKED, ch: 0 });
+	// Without this, a normalising `setSelection` would make this a silent duplicate of the
+	// forward test: the reveal would be proven, the BACKWARDS part of the name would not.
+	expect(await harness.getSelectionHead()).toEqual({ line: LINE_ABOVE_MARKED, ch: 0 });
 	await expect.poll(() => lineEndsWithDash(EMBED_MARKED)).toBe(true);
 
 	await harness.setCursor(LINE_ELSEWHERE, 0);

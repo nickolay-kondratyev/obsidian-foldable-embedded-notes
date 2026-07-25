@@ -25,6 +25,8 @@ export interface AbstractFile {
 
 export interface Editor {
 	getValue(): string;
+	/** `"head"`/`"anchor"` return the selection's MOVING/fixed end; `"from"`/`"to"` its ordered ends. */
+	getCursor(mode?: "head" | "anchor" | "from" | "to"): EditorPosition;
 	setCursor(position: EditorPosition): void;
 	setSelection(anchor: EditorPosition, head?: EditorPosition): void;
 	replaceRange(text: string, from: EditorPosition, to?: EditorPosition): void;

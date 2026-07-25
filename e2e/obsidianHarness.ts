@@ -305,6 +305,19 @@ export class ObsidianHarness {
 	}
 
 	/**
+	 * The MOVING end of the current selection — what a test needs to prove a selection really
+	 * is backwards (head before anchor) rather than silently normalised by Obsidian.
+	 */
+	async getSelectionHead(): Promise<EditorPosition> {
+		return await this.page.evaluate(() => {
+			const app = window.app;
+			const head = app.workspace.getMostRecentLeaf().view.editor.getCursor("head");
+			// Obsidian's position object carries extra internals; compare only line/ch.
+			return { line: head.line, ch: head.ch };
+		});
+	}
+
+	/**
 	 * Obsidian's `editor.replaceRange` in the active markdown editor: inserts `text`
 	 * at `from`, or replaces `from`..`to` with it when `to` is given (pass `""` to
 	 * delete). Positions are 0-based.

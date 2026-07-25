@@ -1,5 +1,5 @@
 import { StateField } from "@codemirror/state";
-import type { EditorState, Text } from "@codemirror/state";
+import type { EditorState, Line, Text } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { editorLivePreviewField } from "obsidian";
 
@@ -71,7 +71,7 @@ export function isMarkedLine(state: EditorState, lineFrom: number): boolean {
 }
 
 /**
- * Every line number any selection range touches — a bare cursor's line included, since a
+ * Whether any selection range touches `line` — a bare cursor sitting on it included, since a
  * cursor is an empty range.
  *
  * WHY the whole SPAN of each range and not just its `head` (the moving end): Obsidian itself
@@ -80,17 +80,15 @@ export function isMarkedLine(state: EditorState, lineFrom: number): boolean {
  * inside what the user is about to type over.
  *
  * WHY-NOT `anchor`/`head`: those are direction-dependent, `from`/`to` are always ordered.
+ *
+ * WHY-NOT collecting the touched line NUMBERS into a set: that costs one entry per selected
+ * line (select-all in a long note = one per document line) on every decoration rebuild, while
+ * the question actually asked is per MARKED line — of which there are few.
  */
-function linesTouchedBySelection(state: EditorState): Set<number> {
-	const lines = new Set<number>();
-	for (const range of state.selection.ranges) {
-		const first = state.doc.lineAt(range.from).number;
-		const last = state.doc.lineAt(range.to).number;
-		for (let line = first; line <= last; line++) {
-			lines.add(line);
-		}
-	}
-	return lines;
+function isTouchedBySelection(state: EditorState, line: Line): boolean {
+	// The standard CM6 overlap test. Inclusive at both ends, so a range ending exactly at a
+	// line start counts as touching it — the same answer `lineAt(range.to)` gave.
+	return state.selection.ranges.some((range) => range.from <= line.to && range.to >= line.from);
 }
 
 /**
@@ -110,10 +108,9 @@ export const markerDashDecoration = EditorView.decorations.compute(
 		if (!state.field(editorLivePreviewField)) {
 			return Decoration.none;
 		}
-		const selectedLines = linesTouchedBySelection(state);
 		const hidden = state
 			.field(markedEmbedLinesField)
-			.filter((marked) => !selectedLines.has(state.doc.lineAt(marked.lineFrom).number))
+			.filter((marked) => !isTouchedBySelection(state, state.doc.lineAt(marked.lineFrom)))
 			.map((marked) => Decoration.replace({}).range(marked.dashFrom, marked.dashFrom + 1));
 		return Decoration.set(hidden);
 	},
