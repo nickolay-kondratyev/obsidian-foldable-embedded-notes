@@ -1,11 +1,12 @@
 ---
+closed_iso: 2026-07-25T08:02:21Z
 id: nid_zqaxj18jbxwnazzz8aeggz91u_e
 title: "Reading mode: nested embeds share ONE fold state, so folding one folds siblings the user never touched"
-status: open
+status: closed
 deps: []
 links: [nid_7qbtubxk89team9oadnl3hanr_e]
 created_iso: 2026-07-25T00:44:47Z
-status_updated_iso: 2026-07-25T00:44:47Z
+status_updated_iso: 2026-07-25T08:02:21Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
@@ -31,3 +32,43 @@ Keep the reading-mode key a per-session identity only (`src/foldStateStore.ts` i
 - Folding a nested embed in one host note does not pre-fold it in another host note.
 - e2e coverage in `e2e/foldable-embeds.e2e.ts`; lint, build and full e2e green.
 
+
+## Notes
+
+**2026-07-25T08:02:21Z**
+
+FIXED. A nested embed's fold key is now qualified by its HOST embed's key
+(`<hostKey>::in::<ownKey>`), resolved through a new per-instance
+`EmbedFoldKeyRegistry` (src/embedFoldKeyRegistry.ts).
+
+Diagnosis correction: the ticket said getSectionInfo() returns the line INSIDE
+the child. MEASURED: it returns null for a nested embed, so keys degraded to the
+positional fallback `sourcePath::S<hash(sectionText)>::src::#index` — identical
+across occurrences. Same bug, different failing path.
+
+Ordering resolved BY DESIGN, then measured: the registry keys off the host span
+having been SEEN by process() (synchronous registration, lazy memoised
+derivation), NOT off the host having been WIRED, which would be a
+MutationObserver race. A probe against real Obsidian 1.12.7 logged zero host
+lookup misses in the reading view.
+
+Cold window: the two halves of a nested key warm up INDEPENDENTLY (a weak host
+half can pair with a strong own half), so `superseded` became
+`supersededKeys: readonly string[]` and nestedIn emits every weak/strong
+combination (2^depth - 1; 3 at real depth 2). Reviewer verified the cartesian
+set cannot re-merge siblings: siblings share the own half but NEVER the host
+half.
+
+Coverage: 2 specs in e2e/foldable-embeds.e2e.ts (sibling bleed across a
+re-render; cross-note bleed) + e2e/nested-fold-cold-start.e2e.ts for the cold
+window. All three revert-checked RED by the reviewer independently. The
+cold-start spec's first draft was VACUOUS (green with the fix reverted,
+cacheAtOpen=[WARM]); the cold window is now injected via
+ObsidianHarness.withUnindexedNote.
+
+lint 0, build 0, e2e 52 passed (was 51), zero skipped.
+
+Follow-up filed: nid_jdpdpu7w0nfda3y4decz7f6xy_e — Live Preview nested embeds
+share ONE fold state across ALL hosts (pre-existing, NOT a regression from this
+change; the false claim that this fix covered LP was caught in review and
+corrected in the source).

@@ -1,11 +1,12 @@
 ---
+closed_iso: 2026-07-25T07:08:21Z
 id: nid_7qbtubxk89team9oadnl3hanr_e
 title: "Reading mode: line-based fold key is not mapped across edits — the fold is lost, or lands on a DIFFERENT embed"
-status: open
+status: closed
 deps: []
-links: [nid_zqaxj18jbxwnazzz8aeggz91u_e]
+links: [nid_zqaxj18jbxwnazzz8aeggz91u_e, nid_zf4num1ja4c9tpwpgj672ijgn_e]
 created_iso: 2026-07-25T00:44:48Z
-status_updated_iso: 2026-07-25T00:44:48Z
+status_updated_iso: 2026-07-25T07:08:21Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
@@ -34,3 +35,23 @@ Key the OCCURRENCE rather than the line — e.g. `sourcePath::src::#nthOccurrenc
 - e2e coverage for "fold, then edit above, then re-render" — currently absent from the suite.
 - lint, build and full e2e green.
 
+
+## Notes
+
+**2026-07-25T06:28:48Z**
+
+Implemented the occurrence key (src/embedFoldKeys.ts + ReadEmbeds port from src/main.ts); e2e/reading-mode-fold-key.e2e.ts covers both measured scenarios and was failing-first. Cold-metadata-cache window at app launch filed separately as nid_zf4num1ja4c9tpwpgj672ijgn_e.
+
+**2026-07-25T06:54:00Z**
+
+Review iteration 1 response (IMPLEMENTATION_WITH_SELF_PLAN).
+
+BLOCKING B1 (the cold-cache window was a REGRESSION against the line key, not just an unfixed edge) is fixed in the PRODUCT, not the harness: `EmbedFoldKey.superseded` + `FoldStateStore.adoptRecordingOf` let the first render that can derive an occurrence key take over the fold recorded under the cold-cache positional key. `ObsidianHarness.openFile`'s index wait is reverted, so `e2e/foldable-embeds.e2e.ts` "fold state survives leaving the note and coming back" guards the boot window again (MEASURED red 2-of-6 before, green 8-of-8 after, takeover observed firing in 2-of-6).
+
+A third e2e case pins the per-link ordinal (`inserting an UNRELATED embed above a folded one keeps the fold`), verified to go RED when the key derivation is forced onto the positional fallback.
+
+Doc corrections: the false "strictly less lossy than the line key it replaces" claim is retracted; the z4jq inheritance is now described with its changed FREQUENCY; the nested-embed mechanism is marked UNMEASURED; CLAUDE.md is trimmed to a pointer at the module doc.
+
+**2026-07-25T07:08:21Z**
+
+Fixed: reading-mode fold state is keyed by OCCURRENCE (sourcePath::occ::<link>::#<ordinal>, src/embedFoldKeys.ts) derived from app.metadataCache via a narrow injected ReadEmbeds port; the cache entry is located by position, so the src<->link join is off the correctness path. A cold vault index (first render after launch) is handled by a superseded-key handoff (FoldStateStore.adoptRecordingOf) rather than a wait/retry, so the boot window is not regressed vs the old cache-independent line key. e2e: e2e/reading-mode-fold-key.e2e.ts (failing-first); revert of the handoff proved red 4-of-8 runs. Lint/build clean, full e2e 49 passed over repeated runs. Change log: dj7trad66j688g871sge5vflw. Still open by design: nid_z4jq8me8mhstojozeua8fufdr_e (ordinal is still inherited when an earlier same-src embed is deleted) and nid_zqaxj18jbxwnazzz8aeggz91u_e (nested embeds share one key).

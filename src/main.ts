@@ -1,4 +1,5 @@
 import { Plugin } from "obsidian";
+import { EmbedFoldKeys } from "./embedFoldKeys";
 import { FoldStateStore } from "./foldStateStore";
 import { FoldableEmbedsPostProcessor } from "./foldableEmbedsPostProcessor";
 import { livePreviewFoldExtension } from "./livePreview/livePreviewFoldExtension";
@@ -23,7 +24,10 @@ export default class FoldableEmbeddedNotesPlugin extends Plugin {
 		const readSettings = () => settings.get();
 
 		const store = new FoldStateStore();
-		this.postProcessor = new FoldableEmbedsPostProcessor(store, readSettings);
+		// Narrow port over the metadata cache — reading mode identifies an embed by its
+		// OCCURRENCE in the note, which is what survives edits above it.
+		const keys = new EmbedFoldKeys((sourcePath) => this.app.metadataCache.getCache(sourcePath)?.embeds ?? []);
+		this.postProcessor = new FoldableEmbedsPostProcessor(store, readSettings, keys);
 		this.registerMarkdownPostProcessor(this.postProcessor.process);
 		// Needs no onunload counterpart: registerEditorExtension unregisters itself,
 		// CM6 then destroys the view plugin, whose destroy() removes the injected DOM.
@@ -32,6 +36,6 @@ export default class FoldableEmbeddedNotesPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		this.postProcessor?.disconnectAll();
+		this.postProcessor?.teardown();
 	}
 }

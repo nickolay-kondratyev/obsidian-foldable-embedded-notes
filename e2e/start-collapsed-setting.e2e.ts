@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
+import { CLS_FOLDED, expectFolded } from "./foldAssertions";
 import { ObsidianHarness, PLUGIN_ID } from "./obsidianHarness";
+import { captureElement, expectFreshElement } from "./reRenderGuard";
 
 /**
  * The "start embedded notes collapsed" setting, driven against a REAL Obsidian.
@@ -28,6 +30,11 @@ const SETTING_NAME = "Start embedded notes collapsed";
 /** `child.md` comes from the dev vault; note A carries an unmarked AND a marked embed. */
 const NOTE_A_PATH = "start-collapsed-a.md";
 const NOTE_B_PATH = "start-collapsed-b.md";
+/**
+ * A dev-vault note with no embeds at all: the detour used to force a note back through a
+ * full re-render, chosen so it cannot disturb this suite's own serial story.
+ */
+const OTHER_NOTE_PATH = "sibling.md";
 const FIXTURES = {
 	[DATA_JSON_PATH]: JSON.stringify({ startCollapsed: true }),
 	[NOTE_A_PATH]: "# Start collapsed A\n\n![[child]]\n\n![[child]]-\n",
@@ -37,8 +44,6 @@ const FIXTURES = {
 };
 
 const CLS_FOLDABLE = "fen-embed";
-const CLS_FOLDED = "fen-folded";
-const FOLDED_RE = new RegExp(`\\b${CLS_FOLDED}\\b`);
 /** Obsidian's own class for a toggle in the "on" position. */
 const TOGGLE_ENABLED_RE = /\bis-enabled\b/;
 
@@ -85,14 +90,6 @@ async function openInLivePreview(notePath: string): Promise<void> {
 /** The setting's toggle row in the plugin's settings tab. */
 function startCollapsedToggle(): Locator {
 	return page.locator(".setting-item", { hasText: SETTING_NAME }).locator(".checkbox-container");
-}
-
-async function expectFolded(embed: Locator, folded: boolean): Promise<void> {
-	if (folded) {
-		await expect(embed).toHaveClass(FOLDED_RE);
-		return;
-	}
-	await expect(embed).not.toHaveClass(FOLDED_RE);
 }
 
 function isFoldedNow(embed: Locator): Promise<boolean> {
@@ -160,13 +157,18 @@ test("reading mode: an explicit unfold beats the setting, across a re-render", a
 	const unmarked = readingEmbeds().nth(EMBED_UNMARKED);
 	await unmarked.locator(".markdown-embed-title").click();
 	await expectFolded(unmarked, false);
+	const embedBeforeReopen = await captureElement(unmarked);
 
-	await harness.setMarkdownViewMode("source");
+	// Leaving the note and coming back is what genuinely rebuilds the reading-view DOM; a
+	// view-MODE round-trip leaves the same elements in place, so it could not tell the store
+	// apart from a DOM that simply never went away (see `reopenThroughOtherFile`).
+	await harness.reopenThroughOtherFile(NOTE_A_PATH, OTHER_NOTE_PATH);
 	await harness.setMarkdownViewMode("preview");
 
-	// Re-rendered from scratch: the session store's explicit choice must still win over
-	// the setting's "start collapsed" default.
+	// Re-rendered from scratch — PROVEN, not assumed, before anything is concluded from it:
+	// the session store's explicit choice must still win over the setting's default.
 	await expect(readingEmbeds().nth(EMBED_UNMARKED)).toBeAttached();
+	await expectFreshElement(embedBeforeReopen, readingEmbeds().nth(EMBED_UNMARKED));
 	await expectFolded(readingEmbeds().nth(EMBED_UNMARKED), false);
 });
 

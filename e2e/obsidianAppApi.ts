@@ -25,7 +25,10 @@ export interface AbstractFile {
 
 export interface Editor {
 	getValue(): string;
+	/** `"head"`/`"anchor"` return the selection's MOVING/fixed end; `"from"`/`"to"` its ordered ends. */
+	getCursor(mode?: "head" | "anchor" | "from" | "to"): EditorPosition;
 	setCursor(position: EditorPosition): void;
+	setSelection(anchor: EditorPosition, head?: EditorPosition): void;
 	replaceRange(text: string, from: EditorPosition, to?: EditorPosition): void;
 }
 
@@ -44,6 +47,7 @@ export interface WorkspaceLeaf {
 export interface ObsidianApp {
 	readonly vault: {
 		getAbstractFileByPath(path: string): AbstractFile | null;
+		create(path: string, data: string): Promise<AbstractFile>;
 		setConfig(key: string, value: unknown): void;
 	};
 	readonly workspace: {
@@ -54,6 +58,10 @@ export interface ObsidianApp {
 	};
 	readonly commands: {
 		executeCommandById(id: string): boolean;
+	};
+	readonly metadataCache: {
+		/** Null until Obsidian has indexed that file — see `ObsidianHarness.waitUntilIndexed`. */
+		getCache(path: string): object | null;
 	};
 	readonly plugins: {
 		readonly plugins: Record<string, unknown>;

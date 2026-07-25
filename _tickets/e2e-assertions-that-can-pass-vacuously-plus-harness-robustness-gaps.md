@@ -1,11 +1,12 @@
 ---
+closed_iso: 2026-07-25T04:32:45Z
 id: nid_ocmytlb996sexgks0wagew41s_e
 title: "e2e: assertions that can pass vacuously, plus harness robustness gaps"
-status: open
+status: closed
 deps: []
 links: []
 created_iso: 2026-07-25T00:44:50Z
-status_updated_iso: 2026-07-25T00:44:50Z
+status_updated_iso: 2026-07-25T04:32:45Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
@@ -39,3 +40,14 @@ Four independent measured problems in the e2e layer — all of them let a real r
 **2026-07-25T03:35:41Z**
 
 Promoted to priority 1 and should be done FIRST of the must-fix set: several other tickets' acceptance criteria are 'covered by an e2e test', and today two of those assertion shapes can pass vacuously (negated matcher on a missing element; a round-trip that does not re-render). Fixing them first means the rest of the run-through is actually verifiable.
+
+**2026-07-25T04:32:45Z**
+
+RESOLVED. Defects 1, 3, 4 fixed as filed; defect 2's premise was DISPROVEN by independent measurement.
+
+1. Round-trip test now leaves the note (sibling.md) and returns, with a shared e2e/reRenderGuard.ts asserting DOM-node identity changed. Proven non-vacuous: red under a broken FoldStateStore.get(), green after revert.
+2. NOT the described bug. Playwright 1.61.1 scalar not.toHaveClass(/re/) FAILS on a zero-element locator (matches: options.isNot is the fail-in-either-polarity sentinel, not a pass), and deleting preventDefault/stopPropagation detaches nothing on Obsidian 1.12.7. However the ARRAY form not.toHaveClass([/re/]) DOES pass vacuously — documented as a WHY comment in the new shared e2e/foldAssertions.ts, and toBeAttached() retained.
+3. readPersistedPluginData returns null instead of throwing, so expect.poll can retry. Inner parse-retry kept: settings-persistence.e2e.ts reads it once without a poll.
+4. stdio ["ignore","ignore","pipe"]; stderr listener detached with resume(); launch-failure path awaits killAndWaitForExit.
+
+Suite 37/37 green, lint + build clean, tree clean. Follow-ups: nid_lgos6hbf2hvl2sp5jns0xgg5u_e (preventDefault/stopPropagation measurably UNCOVERED — flagged, not deleted), nid_1oipd3ymnbsdlbql01h7hue4p_e, nid_js55rt1e78e55nuj83xh2lg3h_e, nid_jbtcd5ty1u4urr7p01n4ngnuw_e, plus the deferred symmetric-cleanup chore.

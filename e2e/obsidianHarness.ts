@@ -5,7 +5,18 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import type { Browser, Page } from "@playwright/test";
 // Also declares the `window.app` global typing the `page.evaluate` callbacks below rely on.
-import type { EditorPosition } from "./obsidianAppApi";
+import type { EditorPosition, ObsidianApp } from "./obsidianAppApi";
+
+/**
+ * Obsidian's metadata cache plus the ONE field {@link ObsidianHarness.withUnindexedNote}
+ * stashes the real `getCache` in while it is replaced; undefined at every other moment.
+ *
+ * Declared HERE and not on {@link ObsidianApp}: that type models Obsidian's own API, and this
+ * field is the harness's, so it must not look like something a caller may rely on.
+ */
+type PatchableMetadataCache = ObsidianApp["metadataCache"] & {
+	__fenOriginalGetCache?: (path: string) => object | null;
+};
 
 /**
  * Launches a REAL Obsidian (Electron) on a throwaway copy of `.dev-vault`,
@@ -68,6 +79,9 @@ const WINDOW_HEIGHT_PX = 800;
 /** App boot → `layoutReady` covers vault index + workspace restore. */
 const WORKSPACE_READY_TIMEOUT_MS = 60_000;
 const PLUGIN_READY_TIMEOUT_MS = 30_000;
+/** Tolerance for reading `data.json` while it is being rewritten — see `readPersistedPluginData`. */
+const PERSISTED_DATA_READ_ATTEMPTS = 5;
+const PERSISTED_DATA_READ_RETRY_MS = 50;
 
 export type { EditorPosition };
 
@@ -126,16 +140,26 @@ export class ObsidianHarness {
 	/** Spawns the Obsidian process against the already-prepared dirs and attaches over CDP. */
 	private static async spawnAndConnect(): Promise<ObsidianHarness> {
 		const executablePath = ObsidianHarness.resolveObsidianPath();
-		const obsidianProcess = childProcess.spawn(executablePath, [
-			`--user-data-dir=${SANDBOX_CONFIG_DIR}`,
-			// Port 0 = OS-assigned; the concrete endpoint is read from stderr.
-			"--remote-debugging-port=0",
-			...(process.platform === "linux" ? ["--no-sandbox"] : []),
-			// Escape hatch for environment-specific Chromium flags (e.g.
-			// `--ozone-platform=headless` on display-less CI) without editing the harness.
-			// Space-separated flags only — quoting is NOT supported, so no flag values with spaces.
-			...(process.env["OBSIDIAN_E2E_EXTRA_ARGS"]?.split(" ").filter((arg) => arg !== "") ?? []),
-		]);
+		const obsidianProcess = childProcess.spawn(
+			executablePath,
+			[
+				`--user-data-dir=${SANDBOX_CONFIG_DIR}`,
+				// Port 0 = OS-assigned; the concrete endpoint is read from stderr.
+				"--remote-debugging-port=0",
+				...(process.platform === "linux" ? ["--no-sandbox"] : []),
+				// Escape hatch for environment-specific Chromium flags (e.g.
+				// `--ozone-platform=headless` on display-less CI) without editing the harness.
+				// Space-separated flags only — quoting is NOT supported, so no flag values with spaces.
+				...(process.env["OBSIDIAN_E2E_EXTRA_ARGS"]?.split(" ").filter((arg) => arg !== "") ?? []),
+			],
+			{
+				// stdout is DISCARDED rather than piped: nothing here reads it, and an
+				// un-drained pipe deadlocks the app once its ~64KB OS buffer fills — Obsidian's
+				// `write()` then blocks forever and every later assertion times out looking
+				// random. stderr stays piped because the CDP endpoint is announced on it.
+				stdio: ["ignore", "ignore", "pipe"],
+			},
+		);
 		try {
 			const cdpEndpoint = await ObsidianHarness.waitForDevtoolsEndpoint(obsidianProcess);
 			const browser = await chromium.connectOverCDP(cdpEndpoint, { timeout: LAUNCH_TIMEOUT_MS });
@@ -144,7 +168,10 @@ export class ObsidianHarness {
 			await ObsidianHarness.enableCommunityPlugins(page);
 			return new ObsidianHarness(browser, obsidianProcess, page);
 		} catch (error) {
-			obsidianProcess.kill();
+			// AWAIT the exit, exactly as `close()` does: a killed-but-not-awaited Obsidian keeps
+			// writing sandbox-config files while dying, so the NEXT spec's `prepareSandboxConfigDir`
+			// wipe can fail with ENOTEMPTY and mask this original launch failure.
+			await ObsidianHarness.killAndWaitForExit(obsidianProcess);
 			throw error;
 		}
 	}
@@ -182,7 +209,15 @@ export class ObsidianHarness {
 		});
 	}
 
-	/** Opens a vault file in a MAIN-AREA leaf. */
+	/**
+	 * Opens a vault file in a MAIN-AREA leaf.
+	 *
+	 * Deliberately does NOT wait for the vault INDEX — {@link waitUntilIndexed} is opt-in for
+	 * the specs that need it. MEASURED on Obsidian 1.12.7: the index is still being built for
+	 * the first render or two after launch, and the plugin has to keep a user's fold across
+	 * that window (see `EmbedFoldKeys`). Waiting here unconditionally would hide that behaviour
+	 * from `foldable-embeds.e2e.ts`, which is the only place it is guarded.
+	 */
 	async openFile(vaultPath: string): Promise<void> {
 		await this.page.evaluate(async (targetPath) => {
 			// Undocumented-but-stable app globals; see obsidianAppApi.ts for the typing.
@@ -193,6 +228,90 @@ export class ObsidianHarness {
 			}
 			await app.workspace.getLeaf(false).openFile(file);
 		}, vaultPath);
+	}
+
+	/**
+	 * Creates a vault file WHILE Obsidian is running, through Obsidian's own vault API — so the
+	 * app reacts to it exactly as it does to a note the user creates (index, link resolution,
+	 * open views). Writing the file behind Obsidian's back would not be the same event.
+	 */
+	async createNote(vaultPath: string, contents: string): Promise<void> {
+		await this.page.evaluate(
+			async (note) => {
+				await window.app.vault.create(note.path, note.contents);
+			},
+			{ path: vaultPath, contents },
+		);
+	}
+
+	/**
+	 * Waits until Obsidian has INDEXED `vaultPath` (its metadata cache answers).
+	 *
+	 * App readiness, not an assertion, and OPT-IN because it hides one real product
+	 * behaviour: a fold made before the index answers is recorded under a positional key, and
+	 * the plugin only reclaims it on the next render — so an EDIT made in that window can
+	 * still move it (documented on `EmbedFoldKeys`; not a regression, the line key it replaced
+	 * did that unconditionally). A spec whose subject IS an edit must therefore start from an
+	 * indexed note, or it measures the boot race instead of the edit. A spec whose subject is
+	 * the boot race must NOT call this.
+	 */
+	async waitUntilIndexed(vaultPath: string): Promise<void> {
+		await this.page.waitForFunction(
+			(targetPath) => window.app.metadataCache.getCache(targetPath) !== null,
+			vaultPath,
+		);
+	}
+
+	/**
+	 * Runs `body` while the metadata cache answers NOTHING for `vaultPath` — the COLD window
+	 * Obsidian genuinely has for the first render(s) after launch, made deterministic.
+	 *
+	 * WHY the injection: that window cannot be reached by timing. MEASURED on Obsidian 1.12.7 —
+	 * by the time this harness has a workspace and the plugin enabled, `getCache` already
+	 * answers for every fixture, so a spec that merely opens a note "early" is green for the
+	 * wrong reason. This replaces exactly the ONE call the plugin makes to identify an embed
+	 * ({@link ObsidianApp.metadataCache.getCache}, see `main.ts`), for exactly ONE path, and
+	 * restores it even if `body` throws — no product code knows it is under test.
+	 */
+	async withUnindexedNote<T>(vaultPath: string, body: () => Promise<T>): Promise<T> {
+		await this.page.evaluate((targetPath) => {
+			const cache = window.app.metadataCache as PatchableMetadataCache;
+			if (cache.__fenOriginalGetCache !== undefined) {
+				throw new Error(`e2e: metadata cache already hidden: path=[${targetPath}]`);
+			}
+			const original = cache.getCache.bind(cache);
+			cache.__fenOriginalGetCache = original;
+			cache.getCache = (path: string) => (path === targetPath ? null : original(path));
+		}, vaultPath);
+		try {
+			return await body();
+		} finally {
+			await this.page.evaluate(() => {
+				const cache = window.app.metadataCache as PatchableMetadataCache;
+				const original = cache.__fenOriginalGetCache;
+				if (original === undefined) {
+					throw new Error("e2e: metadata cache was not hidden");
+				}
+				cache.getCache = original;
+				delete cache.__fenOriginalGetCache;
+			});
+		}
+	}
+
+	/**
+	 * Re-opens `vaultPath` after a detour through `viaVaultPath`, so its view is REBUILT FROM
+	 * SCRATCH — the rendered DOM of the note under test is discarded while the other file is
+	 * open and re-created on the way back.
+	 *
+	 * WHY-NOT a view-MODE round-trip (reading → editing → reading) for this: Obsidian keeps
+	 * the reading-view DOM of the file that stays open, so the very elements under assertion
+	 * survive it. Any "fold state survives a re-render" assertion built on a mode round-trip
+	 * passes even with the fold-state store completely broken. `openFile` reuses the active
+	 * leaf and Obsidian tracks no history here, so both hops are explicit.
+	 */
+	async reopenThroughOtherFile(vaultPath: string, viaVaultPath: string): Promise<void> {
+		await this.openFile(viaVaultPath);
+		await this.openFile(vaultPath);
 	}
 
 	/**
@@ -261,6 +380,31 @@ export class ObsidianHarness {
 	}
 
 	/**
+	 * Selects `anchor`..`head` (0-based) in the active markdown editor. Pass the two ends in
+	 * either order — a backwards selection (head BEFORE anchor) is what dragging upwards
+	 * produces, and it must behave the same.
+	 */
+	async setSelection(anchor: EditorPosition, head: EditorPosition): Promise<void> {
+		await this.page.evaluate((range) => {
+			const app = window.app;
+			app.workspace.getMostRecentLeaf().view.editor.setSelection(range.anchor, range.head);
+		}, { anchor, head });
+	}
+
+	/**
+	 * The MOVING end of the current selection — what a test needs to prove a selection really
+	 * is backwards (head before anchor) rather than silently normalised by Obsidian.
+	 */
+	async getSelectionHead(): Promise<EditorPosition> {
+		return await this.page.evaluate(() => {
+			const app = window.app;
+			const head = app.workspace.getMostRecentLeaf().view.editor.getCursor("head");
+			// Obsidian's position object carries extra internals; compare only line/ch.
+			return { line: head.line, ch: head.ch };
+		});
+	}
+
+	/**
 	 * Obsidian's `editor.replaceRange` in the active markdown editor: inserts `text`
 	 * at `from`, or replaces `from`..`to` with it when `to` is given (pass `""` to
 	 * delete). Positions are 0-based.
@@ -299,19 +443,49 @@ export class ObsidianHarness {
 	}
 
 	/**
-	 * The plugin's persisted settings AS THEY ARE ON DISK right now, or `null` when the
-	 * plugin has never written them.
+	 * The plugin's persisted settings AS THEY ARE ON DISK right now, or `null` when there is
+	 * nothing readable there — the file has not been written yet, or a read landed inside a
+	 * save and kept seeing a half-written one.
 	 *
 	 * Read from Node, deliberately NOT from `app.plugins.plugins[id].loadData()`: the point
 	 * is to prove a real file was written, and asking the running plugin could be answered
 	 * by in-memory state. Cheap enough to poll — see the specs that wait for a save.
+	 *
+	 * NEVER THROWS, and that is load-bearing: callers drive this through `expect.poll`, which
+	 * does NOT convert a rejection of the polled function into a retry (it awaits the callback
+	 * outside its own try/catch), so a throw here would hard-fail the very assertion whose job
+	 * is to be patient. `null` is the one "no answer yet" value, and every caller asserts a
+	 * concrete object against it, so a file that stays unreadable still fails the spec — with
+	 * the poll's own timeout rather than a stray parse error.
+	 *
+	 * That safety is a CALLER-SIDE OBLIGATION this function cannot enforce: assert a concrete
+	 * expected object (`toEqual` / `toMatchObject`). An assertion satisfied BY `null`
+	 * (`toBeNull`, `not.toEqual`) would go green on "the plugin never wrote anything".
+	 *
+	 * Writing the file is not atomic (truncate, then write), so an in-flight save is genuinely
+	 * observable as an empty or half-written file. The short retry below is kept even though
+	 * `expect.poll` would also retry: `settings-persistence.e2e.ts` reads this ONCE without a
+	 * poll (proving no stale write lands after a grace period), and that call needs the same
+	 * tolerance.
+	 *
+	 * WHY-NOT retry an ABSENT file: "never written" is an answer, not a transient state, and
+	 * callers waiting for a first save already poll. Retrying it would only slow those polls.
 	 */
-	static readPersistedPluginData(): unknown {
+	static async readPersistedPluginData(): Promise<unknown> {
 		const dataFile = path.join(VAULT_COPY_DIR, ".obsidian", "plugins", PLUGIN_ID, "data.json");
 		if (!fs.existsSync(dataFile)) {
 			return null;
 		}
-		return JSON.parse(fs.readFileSync(dataFile, "utf8"));
+		for (let attempt = 1; attempt <= PERSISTED_DATA_READ_ATTEMPTS; attempt += 1) {
+			try {
+				// readFileSync is inside the try on purpose: `existsSync` above can also race a
+				// save that recreates the file, so ENOENT is just as transient as a parse error.
+				return JSON.parse(fs.readFileSync(dataFile, "utf8"));
+			} catch {
+				await new Promise((resolve) => setTimeout(resolve, PERSISTED_DATA_READ_RETRY_MS));
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -396,29 +570,45 @@ export class ObsidianHarness {
 		fs.writeFileSync(path.join(SANDBOX_CONFIG_DIR, `${E2E_VAULT_ID}.json`), JSON.stringify(windowStateJson));
 	}
 
-	/** Resolves the "DevTools listening on ws://…" endpoint from the app's stderr. */
+	/**
+	 * Resolves the "DevTools listening on ws://…" endpoint from the app's stderr.
+	 *
+	 * The stderr listener is removed on EVERY exit path: it accumulates what it reads into a
+	 * string only useful for the boot-failure message, so leaving it attached would grow the
+	 * whole session's stderr in memory for the rest of the run.
+	 */
 	private static waitForDevtoolsEndpoint(proc: childProcess.ChildProcess): Promise<string> {
 		return new Promise<string>((resolve, reject) => {
 			let stderrSoFar = "";
+			const onStderrData = (chunk: Buffer): void => {
+				stderrSoFar += chunk.toString();
+				const match = stderrSoFar.match(/DevTools listening on (ws:\/\/\S+)/);
+				if (match?.[1] !== undefined) {
+					stopListening();
+					resolve(match[1]);
+				}
+			};
+			const stopListening = (): void => {
+				clearTimeout(timer);
+				proc.stderr?.off("data", onStderrData);
+				// Keep DRAINING stderr with nothing attached to it: an un-consumed pipe deadlocks
+				// the app once the OS buffer fills, and `resume()` is the documented
+				// consume-and-discard. (stdout is not piped at all — see `spawnAndConnect`.)
+				proc.stderr?.resume();
+			};
 			const timer = setTimeout(() => {
+				stopListening();
 				reject(
 					new Error(`Obsidian never announced a DevTools endpoint. stderr so far:\n${stderrSoFar}`),
 				);
 			}, LAUNCH_TIMEOUT_MS);
-			proc.stderr?.on("data", (chunk: Buffer) => {
-				stderrSoFar += chunk.toString();
-				const match = stderrSoFar.match(/DevTools listening on (ws:\/\/\S+)/);
-				if (match?.[1] !== undefined) {
-					clearTimeout(timer);
-					resolve(match[1]);
-				}
-			});
+			proc.stderr?.on("data", onStderrData);
 			proc.on("exit", (code) => {
-				clearTimeout(timer);
+				stopListening();
 				reject(new Error(`Obsidian exited before CDP was available: code=[${code}]\n${stderrSoFar}`));
 			});
 			proc.on("error", (error) => {
-				clearTimeout(timer);
+				stopListening();
 				reject(error);
 			});
 		});

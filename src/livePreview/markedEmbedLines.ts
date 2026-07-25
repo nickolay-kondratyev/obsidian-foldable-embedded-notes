@@ -1,5 +1,5 @@
 import { StateField } from "@codemirror/state";
-import type { EditorState, Text } from "@codemirror/state";
+import type { EditorState, Line, Text } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { editorLivePreviewField } from "obsidian";
 
@@ -15,13 +15,18 @@ import { editorLivePreviewField } from "obsidian";
  * WHY-NOT built by interpolating the reading-mode `FOLD_MARKER` constant: a literal
  * regex reads far better than one assembled from fragments, and the two parsers are
  * deliberately different rules — not one rule in two places.
+ *
+ * WHY blanks are tolerated after the dash: reading mode accepts `![[x]]- ` (its marker
+ * may be followed by whitespace), and a stray trailing space is INVISIBLE — requiring the
+ * dash to be the literal last character made the feature die silently in one mode only.
  */
-const WHOLE_LINE_MARKED_EMBED = /^!\[\[[^\]\n]+\]\]-$/;
+// `![[` target `]]`, the marker dash, then nothing but spaces/tabs to end of line.
+const WHOLE_LINE_MARKED_EMBED = /^!\[\[[^\]\n]+\]\]-[ \t]*$/;
 
 interface MarkedEmbedLine {
 	/** Document position of the line start — the fold-state anchor. */
 	readonly lineFrom: number;
-	/** Document position of the marker dash (last character of the line). */
+	/** Document position of the marker dash. */
 	readonly dashFrom: number;
 }
 
@@ -37,7 +42,9 @@ function findMarkedEmbedLines(doc: Text): MarkedEmbedLine[] {
 	let lineFrom = 0;
 	for (const text of doc.iterLines()) {
 		if (WHOLE_LINE_MARKED_EMBED.test(text)) {
-			found.push({ lineFrom, dashFrom: lineFrom + text.length - 1 });
+			// The marker dash is the line's LAST `-`, since the regex allows nothing but
+			// blanks after it. NOT `text.length - 1`: trailing blanks push that past the dash.
+			found.push({ lineFrom, dashFrom: lineFrom + text.lastIndexOf("-") });
 		}
 		// +1 for the line break separating this line from the next.
 		lineFrom += text.length + 1;
@@ -64,12 +71,36 @@ export function isMarkedLine(state: EditorState, lineFrom: number): boolean {
 }
 
 /**
- * Hides the marker dash so `![[x]]-` renders as a plain embed, except on the line the
- * cursor is on — the standard Live Preview convention of revealing raw syntax you are
+ * Whether any selection range touches `line` — a bare cursor sitting on it included, since a
+ * cursor is an empty range.
+ *
+ * WHY the whole SPAN of each range and not just its `head` (the moving end): Obsidian itself
+ * reveals its own raw `![[x]]` on every line a selection covers, so a dash left hidden there
+ * would make the displayed source contradict the file — and would hide a character sitting
+ * inside what the user is about to type over.
+ *
+ * WHY-NOT `anchor`/`head`: those are direction-dependent, `from`/`to` are always ordered.
+ *
+ * WHY-NOT collecting the touched line NUMBERS into a set: that costs one entry per selected
+ * line (select-all in a long note = one per document line) on every decoration rebuild, while
+ * the question actually asked is per MARKED line — of which there are few.
+ */
+function isTouchedBySelection(state: EditorState, line: Line): boolean {
+	// The standard CM6 overlap test. Inclusive at both ends, so a range ending exactly at a
+	// line start counts as touching it — the same answer `lineAt(range.to)` gave.
+	return state.selection.ranges.some((range) => range.from <= line.to && range.to >= line.from);
+}
+
+/**
+ * Hides the marker dash so `![[x]]-` renders as a plain embed, except on the lines the
+ * selection touches — the standard Live Preview convention of revealing raw syntax you are
  * editing.
  *
  * Gated on `editorLivePreviewField`: in plain Source mode the raw text must render
  * literally, dash included.
+ *
+ * Hides EXACTLY the dash, never the blanks a line may carry after it — reading mode also
+ * strips only the dash from the text node and leaves the whitespace verbatim.
  */
 export const markerDashDecoration = EditorView.decorations.compute(
 	[markedEmbedLinesField, editorLivePreviewField, "selection"],
@@ -77,10 +108,9 @@ export const markerDashDecoration = EditorView.decorations.compute(
 		if (!state.field(editorLivePreviewField)) {
 			return Decoration.none;
 		}
-		const cursorLines = new Set(state.selection.ranges.map((range) => state.doc.lineAt(range.head).number));
 		const hidden = state
 			.field(markedEmbedLinesField)
-			.filter((marked) => !cursorLines.has(state.doc.lineAt(marked.lineFrom).number))
+			.filter((marked) => !isTouchedBySelection(state, state.doc.lineAt(marked.lineFrom)))
 			.map((marked) => Decoration.replace({}).range(marked.dashFrom, marked.dashFrom + 1));
 		return Decoration.set(hidden);
 	},

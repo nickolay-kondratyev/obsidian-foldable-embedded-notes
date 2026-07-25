@@ -1,4 +1,4 @@
-import { RangeSet, RangeValue, StateEffect, StateField } from "@codemirror/state";
+import { MapMode, RangeSet, RangeValue, StateEffect, StateField } from "@codemirror/state";
 import type { EditorState } from "@codemirror/state";
 import { foldedByDefault } from "../settings/foldableEmbedsSettings";
 import type { FoldableEmbedsSettings } from "../settings/foldableEmbedsSettings";
@@ -6,6 +6,24 @@ import { isMarkedLine, markedEmbedLinesField } from "./markedEmbedLines";
 
 /** An explicit (user-clicked) fold choice, anchored at a line start. */
 class ExplicitFold extends RangeValue {
+	/**
+	 * A fold anchor must DIE with the line it belongs to. `RangeValue`'s default
+	 * (`TrackDel`) drops a zero-length anchor only when a deletion spans strictly ACROSS
+	 * it, so deleting the anchor's own line — a deletion STARTING at the anchor, i.e.
+	 * Obsidian's "delete line" — left it alive on whatever line moved up, silently folding
+	 * the NEXT embed. `TrackAfter` drops it as soon as a deletion consumes the character
+	 * AFTER the anchor. That COVERS "its line is gone" but is deliberately a bit wider:
+	 * deleting only the line's FIRST character (backspacing the leading `!`) also forgets
+	 * the fold, and an undo of a delete-line brings the embed back UNFOLDED because the
+	 * anchor is gone for good. Both are accepted — every case this widens errs toward
+	 * SHOWING content, and narrowing it costs materially more code than it buys.
+	 *
+	 * WHY-NOT `TrackBefore`/`TrackDel`: both keep the anchor here. And `TrackAfter` is inert
+	 * for an INSERTION at the anchor (`endA == pos`), so typing at the start of a folded
+	 * embed's line still keeps its fold — see {@link explicitFoldAt}.
+	 */
+	override readonly mapMode = MapMode.TrackAfter;
+
 	constructor(readonly folded: boolean) {
 		super();
 	}

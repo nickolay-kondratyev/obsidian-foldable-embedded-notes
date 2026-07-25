@@ -23,7 +23,9 @@ those genuinely differ per mode.
     truth table both modes project, kept in ONE place. The setting makes `![[x]]-` a no-op;
     it never changes marker syntax.
   - `foldableEmbedsSettingsStore.ts` / `foldableEmbedsSettingTab.ts` — load/save over a
-    narrow persistence port; one toggle, saved on change.
+    narrow persistence port; one toggle, saved on change. Saves are SERIALIZED through one
+    promise queue (Obsidian does not await `onChange`) and merge over the RAW loaded
+    `data.json`, so keys this version does not know round-trip instead of being dropped.
   - Both modes read the CURRENT settings through a `ReadSettings` accessor, so a change
     lands on the NEXT render (reopen / mode switch / edit). Deliberately no CM6
     `Compartment` and no forced rerender of open panes.
@@ -35,15 +37,79 @@ those genuinely differ per mode.
   and `unmark` (the inverse, for teardown).
 - `src/foldStateStore.ts` — in-memory session fold state for reading mode (`Map`, no
   persistence).
+- `src/embedFoldKeys.ts` — the KEY into that store: reading mode has no analogue of Live
+  Preview's position mapping, so identity is re-derived every render as the OCCURRENCE —
+  "the Nth `![[x]]` of this note" — read from `app.metadataCache` through the narrow
+  `ReadEmbeds` port injected in `main.ts` (never the whole `App`). The cache entry is located
+  by POSITION (section line window, then ordinal within it), never by joining the DOM `src`
+  against `EmbedCache.link`. Shape `sourcePath::occ::<link>::#<ordinal>`: opaque, `::`
+  delimited, `sourcePath` prefix parseable for per-file invalidation later. A cache that
+  cannot answer — MEASURED: it is COLD for the first render(s) after launch — degrades to a
+  weak positional key (`L…`/`S…` locator, so keys never collide) which the first render that
+  CAN derive an occurrence key takes over, via `FoldStateStore.adoptRecordingOf`. A NESTED
+  embed states its occurrence in the CHILD note, so it has no identity of its own — its key is
+  QUALIFIED by its host's (`<hostKey>::in::<ownKey>`, `nestedIn`). Its two halves warm up
+  INDEPENDENTLY (MEASURED), so a key carries a LIST of superseded keys — every combination of
+  weak/strong halves — and the takeover tries them all. What the key does and does NOT survive
+  is documented ONCE, on the module.
+- `src/embedFoldKeyRegistry.ts` — the host lookup behind that: every embed span is registered
+  SYNCHRONOUSLY in the post-processor and its key derived LAZILY (and memoised) on first use.
+  That is what makes the lookup ORDERING-FREE — an embed BODY is post-processed only after the
+  section holding its host span was, so the host is always registered (MEASURED), with no
+  dependence on the host having been WIRED. A host the post-processor never saw — in practice
+  a top-level LIVE PREVIEW embed, whose span CM6 builds — degrades to `host::<src>`, which
+  identifies a host by its LINK alone. KNOWN LIMITATION (MEASURED): in Live Preview nested
+  embeds therefore still share ONE fold state across ALL hosts — same host note and different
+  host notes alike. Pre-existing, unchanged by this key; ticket
+  nid_jdpdpu7w0nfda3y4decz7f6xy_e.
+- `src/wiredElements.ts` — the "already handled by THIS instance" guard (wired for clicks, or
+  being waited on) both modes use: a `WeakSet`, deliberately NOT a DOM check, so a re-enabled
+  plugin can rewire DOM its predecessor marked.
+- `src/foldableEmbedMark.ts` — one reading-mode embed's injected state and its exact
+  inverse, as a `MarkdownRenderChild` (`ctx.addChild`) owning an `AbortController` for the
+  title listener. Its unload trigger is the DOM: `MarkdownPostProcessorContext.addChild`
+  unloads a child once its `containerEl` (here the embed span) is removed — so a re-render
+  reclaims marks, but a plugin disable does NOT (it removes nothing; MEASURED on 1.12.7).
+  Hence the post-processor also unloads every live mark itself — needed because embed BODIES
+  inside Live Preview widgets are Obsidian's REUSED DOM, unlike a reading view (discarded
+  wholesale on toggle).
+  - KNOWN LIMITATION, measured: re-enabling the plugin does not rewire embeds already on
+    screen, because a preview↔source round trip REUSES a rendered embed body and never
+    re-runs the post-processor over it. A nested embed becomes foldable again only once the
+    note is REOPENED. Consistent with "a change lands on the NEXT render", but unlike Live
+    Preview's top-level embeds, which `registerEditorExtension` rebuilds immediately.
+- `src/pendingEmbedObserver.ts` — the reading-mode WAIT for one embed to finish loading, as a
+  `MarkdownRenderChild` over the SAME contract: the MutationObserver dies with the embed span
+  it observes, so an embed that has not resolved YET (`![[missing]]`) can no longer leave an
+  observer per render behind (ticket nid_78cl6bo3t8umqbndughsbjez9_e; MEASURED 2 → 4 → 6)
+  while STILL being watched for the moment its target appears.
+  Plugin disable is the same asymmetry as a mark's — MEASURED: it unloads a reading-view
+  observer but NOT one on a nested embed inside a Live Preview widget, hence `teardown()`.
 - `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note
   embeds load async, so it waits (MutationObserver, or sync when ready) for
   `.markdown-embed` + title, then: strict `-` marker parse/strip on the embed span's next
-  text-node sibling, initial fold state (session store wins over the `foldedByDefault`
-  default), and DOM wiring via `EmbedFoldDom`.
+  text-node sibling, the `EmbedFoldKeys` identity, initial fold state (session store wins over
+  the `foldedByDefault` default), and DOM wiring via `EmbedFoldDom` under one
+  `FoldableEmbedMark`. `teardown()` (called from `onunload`) unloads every live observer and
+  every live mark — for the SAME reason, see `PendingEmbedObserver`.
+  - The wait ENDS when the embed's RENDER goes away — that render-child bound, not any reading
+    of Obsidian's classes, is the invariant. The one class-based shortcut is
+    `MEDIA_EMBED_CLASSES`: resolved media cannot become a note. Deliberately NOT `file-embed`:
+    `mod-empty` means "target missing RIGHT NOW", and MEASURED on 1.12.7 Obsidian upgrades that
+    SAME span in place once the note is created — treating it as settled silently killed
+    "create the missing note and the embed becomes foldable" (pinned by
+    `e2e/unresolved-embed-observers.e2e.ts`). An unresolved embed therefore keeps ONE observer
+    for as long as it is on screen; a per-instance `WeakSet` keeps it at exactly one.
+  - The marker arms only when the dash is followed by whitespace or a real END OF LINE —
+    nothing after it in its PARENT element, or a `<br>`. NOT merely the end of that text
+    node, or `![[x]]-**bold**` (markup renders as a sibling element) would swallow a dash
+    the user meant literally. KNOWN LIMITATION: only siblings are inspected, so an embed
+    wrapped in inline markup (`**![[x]]-** tail`) still loses its dash — rare, pre-existing.
 - `src/livePreview/` — LIVE PREVIEW, a CM6 editor extension:
   - `markedEmbedLines.ts` — whole-line `![[x]]-` scan (cached in a StateField) + the
     decoration hiding the marker dash, gated on `editorLivePreviewField` so plain Source
-    mode stays verbatim.
+    mode stays verbatim. Trailing blanks after the dash are tolerated (reading mode accepts
+    them too, and they are invisible); the decoration hides EXACTLY the dash, never them.
   - `foldStateField.ts` — explicit fold state as a `RangeSet` (positions map through
     edits) + `effectiveFold`: an explicit choice beats the `foldedByDefault` default.
   - `livePreviewFoldExtension.ts` — ViewPlugin projecting that state onto Obsidian's embed
@@ -55,6 +121,9 @@ those genuinely differ per mode.
   TOP-LEVEL embeds are wired — a nested one resolves to its parent's line, and it is the
   post-processor's business anyway. The widget DOM is Obsidian's and is REUSED across
   edits, so every injection needs a matching removal in `destroy()`.
+- A fold anchor lives and dies with its LINE (`ExplicitFold.mapMode = TrackAfter`): any
+  deletion consuming the character after the anchor drops it, so a deleted line cannot hand
+  its fold to the embed that moves up; insertions at the line start leave it.
 - `styles.css` — collapse (`.fen-folded`), forced-visible title bar, chevron rotation. All
   fold state is class-driven (no inline styles / no runtime `<style>`). Shared by both modes.
 - eslint scopes the obsidianmd plugin ruleset to `src/`; `e2e/` (Node/Playwright harness) and

@@ -1,11 +1,12 @@
 ---
+closed_iso: 2026-07-25T08:41:09Z
 id: nid_78cl6bo3t8umqbndughsbjez9_e
 title: "Reading mode: unresolved embeds accumulate MutationObservers without bound"
-status: open
+status: closed
 deps: []
 links: [nid_1ngosntduq5baizn9b7056h34_e]
 created_iso: 2026-07-25T00:44:49Z
-status_updated_iso: 2026-07-25T00:44:49Z
+status_updated_iso: 2026-07-25T08:41:09Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
@@ -32,3 +33,23 @@ Two small changes:
 - Resolved note embeds and media embeds still behave exactly as today.
 - lint, build and full e2e green.
 
+
+## Notes
+
+**2026-07-25T08:41:09Z**
+
+RESOLVED on branch unresolved-embed-observer-leak. Re-review verdict: READY.
+
+The wait for an embed to load is now a MarkdownRenderChild (src/pendingEmbedObserver.ts),
+so its observer dies with the embed span; a per-instance WeakSet stops a reused span
+(Live Preview widget DOM) from holding two. teardown() still unloads observers —
+MEASURED: plugin-disable does not unload ctx.addChild children whose DOM Obsidian keeps.
+
+THIS TICKET'S DESIGN POINT 1 WAS WRONG and was deliberately NOT implemented: bailing on
+`file-embed` before creating the observer. MEASURED on 1.12.7 — when the missing note is
+later created, Obsidian upgrades the SAME span in place to `markdown-embed`, so the bail
+left a late-resolved embed unfoldable. `mod-empty` is not terminal either. Design point 2
+alone bounds the leak. Pinned by e2e "target created later becomes foldable".
+
+Gates (re-run by the reviewer): lint 0 errors (1 pre-existing warning), build clean,
+full e2e 57 passed / 0 failed (was 55; +2 new specs, both verified RED-for-the-right-reason).

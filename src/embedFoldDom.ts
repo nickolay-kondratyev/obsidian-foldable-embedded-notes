@@ -69,13 +69,19 @@ export class EmbedFoldDom {
 	}
 
 	/**
-	 * Click-to-fold on a title bar. preventDefault/stopPropagation suppress
-	 * Obsidian's own "open the embedded note" behaviour on the title — without them
-	 * every fold click would also navigate away.
+	 * Click-to-fold on a title bar. preventDefault/stopPropagation are there to stop the click
+	 * ALSO doing what a click on that title otherwise does: Obsidian's own "open the embedded
+	 * note" default, and — in Live Preview, where the title lives inside `.cm-content` —
+	 * CodeMirror placing a cursor at the click position.
 	 *
-	 * @param options passes Live Preview's `AbortSignal` (its titles outlive the
-	 * plugin); reading mode passes nothing because its title element is created and
-	 * discarded with each render.
+	 * HONEST about the evidence: neither effect is covered by a test, and MEASURED against
+	 * Obsidian 1.12.7 the whole e2e suite stays green with both calls deleted. Treat them as a
+	 * deliberate defence, NOT as an observed fix: do not drop them on the strength of a green
+	 * suite, and do not claim more for them than this until something asserts it.
+	 *
+	 * @param options carries an `AbortSignal`, which BOTH modes pass: a title can be
+	 * Obsidian's own DOM and outlive the plugin (every Live Preview title, and a reading-mode
+	 * one whenever the embed body sits inside a Live Preview widget).
 	 */
 	static onTitleClick(title: HTMLElement, onClick: () => void, options?: AddEventListenerOptions): void {
 		title.addEventListener(
@@ -92,8 +98,8 @@ export class EmbedFoldDom {
 	/**
 	 * The exact inverse of {@link markFoldable} + {@link ensureChevron}: leaves the
 	 * embed as Obsidian rendered it. Lives here so it stays in lockstep with the
-	 * injection above. Needed by Live Preview, whose embed DOM belongs to Obsidian
-	 * and survives plugin unload; reading-mode DOM is re-created from scratch instead.
+	 * injection above. Needed by BOTH modes, because Obsidian's embed DOM survives plugin
+	 * unload: Live Preview's widgets, and the embed bodies reading mode renders inside them.
 	 */
 	static unmark(embed: HTMLElement): void {
 		embed.classList.remove(EmbedFoldDom.CLS_FOLDABLE, EmbedFoldDom.CLS_FOLDED);

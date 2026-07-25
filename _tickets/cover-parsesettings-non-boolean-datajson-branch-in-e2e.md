@@ -24,3 +24,32 @@ Raised as an explicitly NON-blocking residual in .ai_out/default-collapsed-setti
 - Test is mutation-proven: it goes red when the `typeof === "boolean"` guard is removed.
 - `npm run lint` and `npm run build` stay green; the rest of the e2e suite is unchanged.
 
+
+## Notes
+
+**2026-07-25T03:58:33Z**
+
+SECOND CASE for this ticket (added after the settings-persistence fix, commit 503f05b):
+cover `asKeyedObject` in src/settings/foldableEmbedsSettingsStore.ts (the
+non-object-root branches). It belongs here because this ticket already owns
+hostile-`data.json` seeding through `harness.launch({ extraFixtures: ... })`.
+
+What it guards: the store now RE-WRITES the unknown keys it found in data.json
+(`{ ...this.persisted, ...this.current }`), so a root that is not a plain object must be
+DROPPED rather than spread. `asKeyedObject` rejects `null`, arrays and non-objects.
+Nothing exercises those branches at any level today.
+
+Failure scenario: a refactor drops the `Array.isArray` check; a data.json whose root is
+`[1,2]` is then spread into `{"0":1,"1":2,"startCollapsed":true}` and written back,
+permanently mangling the user's file - and every gate stays green.
+
+Acceptance for this case: seed a data.json whose root is an ARRAY (and/or a bare string),
+toggle the setting through the real settings dialog, then assert the file on disk is
+EXACTLY `{"startCollapsed": true}` - no index keys, no mangling. Mutation-proven: goes red
+when the `Array.isArray` guard is removed.
+
+Cheaper alternative if the unit-test runner (nid_lcehddb2tdcq6qxztmhvhpgga_e) lands first:
+cover `asKeyedObject` there as pure logic instead, and close this case out.
+
+Raised as SHOULD-FIX 2 in
+.ai_out/settings-persistence/settings-persistence-fix/IMPLEMENTATION_REVIEW__PUBLIC.md.
