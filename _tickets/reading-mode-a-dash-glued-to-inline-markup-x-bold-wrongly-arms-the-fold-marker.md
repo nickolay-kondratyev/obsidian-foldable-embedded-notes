@@ -1,0 +1,35 @@
+---
+id: nid_7ge9y22j5luopjsposmfoi718_e
+title: "Reading mode: a dash glued to inline markup (`![[x]]-**bold**`) wrongly arms the fold marker"
+status: open
+deps: []
+links: []
+created_iso: 2026-07-25T00:44:50Z
+status_updated_iso: 2026-07-25T00:44:50Z
+type: bug
+priority: 2
+assignee: CC_WITH-nickolaykondratyev
+---
+
+`stripFoldMarker` (`src/foldableEmbedsPostProcessor.ts:94-110`) treats `afterMarker === ""` (`:104`) as "end of line", but it only means "end of THIS text node". Any inline markup right after the dash starts a new node, so the dash is the whole text node and counts as a marker.
+
+MEASURED in reading mode:
+- ``![[g]]-**bold** tail`` -> FOLDED, dash stripped (renders as "bold tail")
+- ``![[g]]-`code` `` -> FOLDED, dash stripped
+- `![[g]]-x` -> correctly literal and unfolded
+
+So the documented rule at `:81-85` ("`![[x]]-like` therefore keeps its literal dash") holds only when the following text is PLAIN; otherwise the marker silently arms and the user's dash is deleted from the rendered output.
+
+Reproduced against real Obsidian 1.12.7 during the review; throwaway probe specs and logs are in the gitignored `.tmp/probe/` (`probe*.e2e.ts`, `pw.config.ts`, `run*.log`), runnable with:
+`OBSIDIAN_PATH=$(bash scripts/setup-obsidian-bin.sh) npx playwright test --config .tmp/probe/pw.config.ts`
+
+## Design
+
+Require the marker to be at a real end-of-line, not merely end-of-text-node: keep the existing "followed by whitespace" branch, and for the empty case additionally require the text node to be the last inline before a break/block end (`sibling.nextSibling === null || sibling.nextSibling instanceof HTMLBRElement`). Keep the structural (no-lookbehind) style — it is required for Obsidian mobile/iOS Safari.
+
+## Acceptance Criteria
+
+- ``![[x]]-**bold**`` renders the dash literally and does NOT fold by default.
+- `![[x]]-` (alone, and followed by whitespace/text) still folds by default with the dash stripped.
+- e2e coverage in `e2e/foldable-embeds.e2e.ts` alongside the existing `![[child]]-x` negative case; lint, build and full e2e green.
+
