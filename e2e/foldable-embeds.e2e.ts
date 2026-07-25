@@ -31,6 +31,13 @@ const TWINS_NOTE_PATH = "twins.md";
 /** Embeds heading- and block-ref marker variants. */
 const REF_PARENT_NOTE_PATH = "ref-parent.md";
 const REF_CHILD_NOTE_PATH = "ref-child.md";
+/** Host note embedded TWICE, each occurrence rendering one NESTED embed of its own. */
+const NESTED_CHILD_NAME = "nested-child";
+const NESTED_GRANDCHILD_NAME = "nested-grandchild";
+const NESTED_TWINS_NOTE_PATH = "nested-twins.md";
+/** Two DIFFERENT notes hosting the SAME nested embed (cross-note identity). */
+const NESTED_HOST_A_NOTE_PATH = "nested-host-a.md";
+const NESTED_HOST_B_NOTE_PATH = "nested-host-b.md";
 
 const CLS_FOLDABLE = "fen-embed";
 const CLS_COLLAPSED = "is-collapsed";
@@ -58,6 +65,15 @@ test.beforeAll(async () => {
 				"# Ref child\n\n## Section A\n\nBody of section A.\n\nStandalone block. ^blockid\n",
 			[REF_PARENT_NOTE_PATH]:
 				"# Ref parent\n\n![[ref-child#Section A]]-\n\n![[ref-child#^blockid]]-\n",
+			// NESTING fixtures: the host note embeds one more note, so every occurrence of
+			// the host renders a nested embed whose OWN note, section text and `src` are
+			// identical — everything except the HOST it sits in.
+			[`${NESTED_GRANDCHILD_NAME}.md`]: "Body of the nested grandchild.\n",
+			[`${NESTED_CHILD_NAME}.md`]: `# Nested child\n\n![[${NESTED_GRANDCHILD_NAME}]]\n`,
+			[NESTED_TWINS_NOTE_PATH]:
+				`# Nested twins\n\n![[${NESTED_CHILD_NAME}]]\n\n![[${NESTED_CHILD_NAME}]]\n`,
+			[NESTED_HOST_A_NOTE_PATH]: `# Host A\n\n![[${NESTED_CHILD_NAME}]]\n`,
+			[NESTED_HOST_B_NOTE_PATH]: `# Host B\n\n![[${NESTED_CHILD_NAME}]]\n`,
 		},
 	});
 	page = harness.page;
@@ -80,6 +96,38 @@ test.afterAll(async () => {
  */
 function foldableEmbeds(): Locator {
 	return page.locator(`.markdown-reading-view .markdown-embed.${CLS_FOLDABLE}`);
+}
+
+/**
+ * The embeds NESTED inside the `![[nested-child]]` hosts of the open note, in document
+ * order — one per host occurrence. Chained through the host's `src` (the pattern the Live
+ * Preview suite already uses) so the locator states what it selects: the SAME grandchild
+ * embed, once per host, which is exactly what must fold independently.
+ */
+function nestedEmbeds(): Locator {
+	return page
+		.locator(`.markdown-reading-view .internal-embed[src="${NESTED_CHILD_NAME}"]`)
+		.locator(`.markdown-embed.${CLS_FOLDABLE}`);
+}
+
+/**
+ * Waits until all `expected` nested embeds of this render are fully wired.
+ *
+ * The chevron is injected in the same synchronous block that applies the fold class, so a
+ * chevron on the LAST one means every fold projection of this render has happened — the
+ * settled barrier a "this one is NOT folded" assertion needs, since that assertion retries
+ * until it passes and would otherwise be green merely for being early.
+ */
+async function waitForNestedEmbedsWired(expected: number): Promise<void> {
+	await expect(nestedEmbeds()).toHaveCount(expected);
+	await expect(nestedEmbeds().nth(expected - 1).locator(".fen-collapse-icon")).toBeAttached();
+}
+
+/** Opens a note in reading mode with all `nestedCount` of its NESTED embeds wired. */
+async function openWithNestedEmbeds(vaultPath: string, nestedCount: number): Promise<void> {
+	await harness.openFile(vaultPath);
+	await harness.setMarkdownViewMode("preview");
+	await waitForNestedEmbedsWired(nestedCount);
 }
 
 /** textContent of the DOM text node immediately following an embed span. */
@@ -212,6 +260,44 @@ test("heading- and block-ref `![[note#...]]-` fold by default with the dash stri
 	await expectFolded(blockEmbed, true);
 	expect(await nextSiblingText(headingEmbed)).not.toMatch(/^-/);
 	expect(await nextSiblingText(blockEmbed)).not.toMatch(/^-/);
+});
+
+test("a NESTED embed folds independently of its twin in a sibling host, across a re-render", async () => {
+	// Both nested embeds render the same note, inside the same host note, from identical
+	// markup — the shape in which their fold identity used to collapse onto one key
+	// (ticket nid_zqaxj18jbxwnazzz8aeggz91u_e). Only the HOST occurrence tells them apart.
+	await openWithNestedEmbeds(NESTED_TWINS_NOTE_PATH, 2);
+
+	// GIVEN: only the nested embed of the FIRST host is folded.
+	await nestedEmbeds().nth(0).locator(".markdown-embed-title").click();
+	await expectFolded(nestedEmbeds().nth(0), true);
+	await expectFolded(nestedEmbeds().nth(1), false);
+	const foldedBeforeReopen = await captureElement(nestedEmbeds().nth(0));
+
+	// WHEN: the note is rebuilt from scratch, so both keys are re-derived and read back.
+	await harness.reopenThroughOtherFile(NESTED_TWINS_NOTE_PATH, SIBLING_NOTE_PATH);
+	await harness.setMarkdownViewMode("preview");
+	await waitForNestedEmbedsWired(2);
+	await expectFreshElement(foldedBeforeReopen, nestedEmbeds().nth(0));
+
+	// THEN: the fold is still on the one the user folded, and its twin is untouched.
+	await expectFolded(nestedEmbeds().nth(0), true);
+	await expectFolded(nestedEmbeds().nth(1), false);
+});
+
+test("folding a NESTED embed in one host note leaves it unfolded in ANOTHER host note", async () => {
+	// GIVEN: the nested embed of host A is folded.
+	await openWithNestedEmbeds(NESTED_HOST_A_NOTE_PATH, 1);
+	await nestedEmbeds().first().locator(".markdown-embed-title").click();
+	await expectFolded(nestedEmbeds().first(), true);
+
+	// WHEN: host B — which embeds the very same child, for the first time this session — is
+	// opened. Nothing about the nested embed itself differs between the two notes, so a fold
+	// identity that ignores the host cannot tell them apart.
+	await openWithNestedEmbeds(NESTED_HOST_B_NOTE_PATH, 1);
+
+	// THEN: host B's nested embed is unfolded — the user never touched it.
+	await expectFolded(nestedEmbeds().first(), false);
 });
 
 // Last in this serial file: it disables the plugin, so anything after it would run
