@@ -216,3 +216,157 @@ honest and arguably the more stable behaviour. Flagging only so the divergence f
 2. `src/embedFoldKeys.ts:133-135` — fix or correct the superseded claim per F2.
 3. `src/embedFoldKeyRegistry.ts` module doc — say that a miss re-collides (F3).
 4. Follow-up ticket: Live Preview nested-embed fold identity (CM6 widget span identity).
+
+---
+
+# RE-REVIEW — ITERATION 1 (fresh reviewer instance)
+
+Diff reviewed: `0f27551..HEAD` (`7418749`, `21e1e75`, `575edaa`), final files read, not only the diff.
+
+## Verdict — **READY**
+
+Both original must-fix findings are genuinely resolved. F2's resolution went well beyond my
+suggested 2-line fix and I confirmed WHY: I reproduced the RED for BOTH the original code and
+my own suggested fix, in a scratch worktree, against real Obsidian. The implementer's claim
+that my suggestion was insufficient is **true and measured** — it is not a rationalisation.
+No BLOCKING or SHOULD-FIX findings remain. The remaining items are NITs, recorded for the
+record only; none of them justifies another round.
+
+## Disposition of the ORIGINAL findings
+
+| # | Original finding | Status | Evidence |
+|---|---|---|---|
+| F1 | Live Preview "different notes no longer share" is FALSE | **RESOLVED** | `src/embedFoldKeys.ts:167-173`, `src/embedFoldKeyRegistry.ts:47-53`, `CLAUDE.md` registry bullet now all say LP nested embeds share ONE fold state across ALL hosts (same note AND different notes), flagged pre-existing, with ticket `nid_jdpdpu7w0nfda3y4decz7f6xy_e`. Matches exactly what I measured last round. NOT over-corrected: the claim is structurally certain (`host::<src>` is the child link, identical everywhere) and I had measured the cross-note half directly. |
+| F2 | `nestedIn`'s superseded branch is dead → cold-window nested fold LOST | **RESOLVED, and my suggested fix was wrong** | See "Revert check" below. `supersededKeys: readonly string[]` + cartesian product in `src/embedFoldKeys.ts:149-157`; adoption loop `src/foldableEmbedsPostProcessor.ts:102-104`; new spec `e2e/nested-fold-cold-start.e2e.ts`. |
+| F3 | A host-lookup MISS silently re-collides | **RESOLVED (doc)** | `src/embedFoldKeyRegistry.ts:47-53` now says plainly "The fallback is NOT safe, it is only the least bad answer", names the re-collision, and records the per-element-counter alternative and why it was not taken. |
+| F4 | Key slots outlive marks | **RESOLVED (doc)** | `src/embedFoldKeyRegistry.ts:63-71` documents the deliberate lifetime and the WHY (re-deriving would let a host disagree with children it already gave a prefix to). |
+
+Ticket `_tickets/live-preview-nested-embeds-share-one-fold-state-across-all-hosts.md` exists,
+is accurate, and its acceptance criteria name both LP cases. Good follow-up hygiene.
+
+## Revert check — the new spec is NOT vacuous (my own runs)
+
+Scratch worktree `.worktree/rr-revert` at HEAD, `node_modules` symlinked, ONLY `nestedIn`
+altered. Removed afterwards; `git status` clean.
+
+| `nestedIn` variant | Result |
+|---|---|
+| ORIGINAL pre-review semantics (`ownSup === undefined ? [] : [qualify(hostSup ?? hostCur, ownSup)]`) | **1 failed** — `unexpected value "internal-embed markdown-embed inline-embed is-loaded fen-embed"` (no `fen-folded`), at `nested-fold-cold-start.e2e.ts:96` |
+| MY suggested 2-line fix (each half falls back to its own current) | **1 failed** — `expect(locator).toHaveClass(expected) failed` |
+| As shipped | **passed** (part of the 52 below) |
+
+Two things this proves beyond the greenness: the spec fails at the **final THEN assertion**
+(line 96), i.e. AFTER `expectFreshElement` has proven a real re-render — so it cannot be red
+for a setup reason; and my own proposed fix really did miss the measured warm-own/cold-host
+combination. The implementer's account of the measurement is honest.
+
+Logs: `.tmp/rr-revertA.log`, `.tmp/rr-revertB.log`.
+
+## Suite — my own runs, this iteration
+
+```
+npm run lint       exit 0   1 problem (0 errors, 1 warning)
+                            obsidianmd/settings-tab/prefer-setting-definitions
+                            src/settings/foldableEmbedsSettingTab.ts:12 — PRE-EXISTING
+npm run build      exit 0
+npm run test:e2e   exit 0   52 passed (9.2s)
+```
+
+`52 passed`, and **zero skipped / zero flaky** — I grepped the reporter output for
+`skipped|flaky|failed|did not run`, the only match is the summary line. So the previously
+green 51 are all still green and the delta is exactly the one new spec.
+Log: `.tmp/rr-e2e-full.log`.
+
+The two ORIGINAL nested specs are byte-unchanged: `git diff 0f27551..HEAD` touches neither
+`e2e/foldable-embeds.e2e.ts` nor `e2e/foldAssertions.ts`, `e2e/reRenderGuard.ts` or
+`src/foldStateStore.ts`. Nothing weakened, nothing removed, no assertion relaxed.
+
+## What I VERIFIED as correct in the NEW work
+
+- **The combinatorial expansion is BOUNDED and small, and does NOT re-merge siblings.** This
+  was my highest-priority check. Per nesting level each key contributes at most 2 candidates
+  (`keyFor` returns `supersededKeys` of length 0 or 1), so depth N yields 2^N candidates,
+  2^N−1 superseded — 3 at the real depth 2, 7 at depth 3. Each is one `Map` lookup on a render.
+  No duplicates are possible either: a positional key carries an `L`/`S` locator and an
+  occurrence key carries `occ`, so `hostSup !== hostCur` and `ownSup !== ownCur` always.
+- **No WRONG adoption across siblings** — traced concretely on the `nested-twins.md` fixture
+  (`# Nested twins\n\n![[nested-child]]\n\n![[nested-child]]\n`, `e2e/foldable-embeds.e2e.ts:73-74`).
+  The two nested embeds have BYTE-IDENTICAL own keys (that is the bug), so all discrimination
+  must come from the host half — and it does in BOTH warmth states: warm hosts are
+  `…::occ::nested-child::#0` / `#1`, cold hosts are `…::L2::…::#0` / `…::L4::…::#0` (separate
+  paragraph sections ⇒ different `section.lineStart`; same-section siblings would differ by
+  `indexWithinSection`, which the positional key also carries). Sibling A's candidate set is
+  `{hostCur_A, hostSup_A} × {ownCur, ownSup}` and B's is `{hostCur_B, hostSup_B} × {…}`; with
+  both host halves distinct the two sets are **disjoint**. So the cartesian product cannot
+  re-merge siblings, and it cannot make A adopt B's recording. The ticket's core invariant
+  survives the fix.
+- **No cross-shape collision either.** For A's superseded key to be some other embed's
+  `current`, a positional (`L…`/`S…`) locator would have to equal an `occ` locator — it cannot.
+- **The chain of partial warm-ups actually composes.** Cold/cold → records at
+  `(hostL, ownS)`; a warm-own/cold-host render has `current = (hostL, ownOcc)` and
+  `supersededKeys = [(hostL, ownS)]`, so it adopts; the fully warm render's candidate list
+  contains `(hostL, ownOcc)` and adopts again. Every intermediate warmth state is covered,
+  which is precisely what the single-key form could not do.
+- **`FoldStateStore` is UNCHANGED** — the fix is confined to key shape plus a loop, and
+  `adoptRecordingOf`'s existing "target already recorded → return" guard makes every attempt
+  after the first a no-op. Good: the riskiest file stayed untouched.
+- **`withUnindexedNote` is honest fault injection, not a test hack**
+  (`e2e/obsidianHarness.ts:240-274`). It replaces exactly ONE method (`getCache`) for exactly
+  ONE path, restores in a `finally`, and throws loudly if the stash is already/never present so
+  a leaked patch cannot silently poison a later spec. No product code branches on being under
+  test. The doc states WHY the real cold window cannot be raced for, with the measurement.
+  Given that `getCache` is the plugin's only index read, `withUnindexedNote` is an accurate name.
+- **`.worktree/` in `eslint.config.mts` and `.gitignore` is right.** CLAUDE.md mandates that
+  location for scratch worktrees; without the ignore, eslint lints a full second copy of the
+  repo outside `tsconfig` and the dev environment breaks. Correct fix, correct place, next to
+  the existing `.tmp` / `.dev-vault` entries, with a WHY comment.
+- **The `getSectionInfo` doc correction is a strengthening, not a weakening.** The earlier text
+  claimed it is ALWAYS null for an embed body; `src/embedFoldKeys.ts:96-101` now says either
+  derivation can occur and — importantly — that the collision holds EITHER WAY, which is the
+  load-bearing claim. Correcting a previously "MEASURED" statement when a better measurement
+  arrives is exactly the honesty bar.
+
+## New findings
+
+### N1 — NIT: the 2^N growth of `supersededKeys` is in the write-up but not in the code
+
+`src/embedFoldKeys.ts:137-157`. The `nestedIn` doc explains WHY every combination is emitted
+but not that the count doubles per nesting level. It is harmless at real depths (3 candidates
+at depth 2, 7 at depth 3, all `Map` lookups) — but a future maintainer adding a third
+cache-dependent component to the key deserves the warning in the same place as the design.
+Direction: one sentence on `nestedIn` — "one candidate per combination, so 2^depth − 1;
+fine while depth is 2–3 and each is a single `Map` lookup".
+
+### N2 — NIT: "At most one of the weaker keys can hold a recording" is very slightly stronger than what holds
+
+`src/foldableEmbedsPostProcessor.ts:100-102`. Two panes of the same note rendering at
+different cache warmth could each record under a different candidate; the first-listed one
+then wins (`hostCur`-major order) and the loser is left as an orphaned `Map` entry for the
+session. Behaviour is still correct — the guard makes it deterministic and the strong key
+wins — and one stale boolean per session is nothing. Direction: soften to "in practice only
+one … and if two ever did, the first wins and the rest are no-ops", or drop the sentence; the
+code needs no change.
+
+### N3 — NIT: `.gitignore` was rewritten wholesale (CRLF → LF)
+
+The one-line addition (`.worktree`) shows up as a 27-line delete + 29-line add because the
+file's line endings changed. Harmless and arguably an improvement, but it hides the real
+change in review and will conflict noisily. Worth knowing it happened; not worth undoing now.
+
+### N4 — NIT: `__fenOriginalGetCache` is declared on the `ObsidianApp` interface
+
+`e2e/obsidianAppApi.ts:64-69` puts the e2e's own stash field on the type that models
+Obsidian's API. The doc comment says so explicitly ("the e2e's own field, not Obsidian's"),
+which keeps it honest, and there is no clean alternative without a cast. Fine as is.
+
+## Documentation updates needed
+
+None blocking. `CLAUDE.md` is accurate on both the LP limitation and the superseded-key LIST;
+the module docs carry the WHY. N1/N2 are one-sentence doc touch-ups if the implementer wants
+them; they can equally ride along with the next change to these files.
+
+## Final verdict
+
+**READY.** F1 and F2 are resolved, F2 correctly and with better evidence than I asked for; I
+independently reproduced both REDs, the full suite is 52 passed / 0 skipped / lint 0 / build 0,
+and no previously-passing behaviour, spec or assertion was weakened. Ship it.
