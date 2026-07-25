@@ -18,6 +18,9 @@ import { ObsidianHarness } from "./obsidianHarness";
  *                                    fold marker in Live Preview (see AC3) — the dash stays
  *                                    literal and the embed is unfolded.
  *   A code-span `![[child]]-`      → no embed widget at all; text stays literal.
+ *   `![[child]]- ` (+ one space)  → embed #3, whole-line marker followed by an INVISIBLE
+ *                                    trailing space: still a marker (reading mode accepts
+ *                                    it too), and only the dash is hidden.
  *
  * ONE Obsidian instance and ONE fresh vault copy PER SPEC FILE (`ObsidianHarness.launch`
  * re-seeds the copy and spawns its own app), so nothing here can leak into another spec.
@@ -32,6 +35,8 @@ import { ObsidianHarness } from "./obsidianHarness";
 test.describe.configure({ mode: "serial" });
 
 const NOTE_PATH = "lp-embeds.md";
+/** The one space after the marker dash on `LINE_TRAILING_SPACE_MARKED`, spelled out. */
+const TRAILING_SPACE = " ";
 const NOTE_CONTENT = [
 	"# Live preview parent", // 0
 	"", // 1
@@ -43,6 +48,9 @@ const NOTE_CONTENT = [
 	"", // 7
 	"A code-span mention of `![[child]]-` stays literal.", // 8
 	"", // 9
+	// APPENDED at the end on purpose: every LINE_* / EMBED_* constant above keeps its value.
+	`![[child]]-${TRAILING_SPACE}`, // 10
+	"", // 11
 ].join("\n");
 
 /** A note embedding another note, which itself embeds one — the NESTED-embed fixture. */
@@ -76,11 +84,20 @@ const DELETE_LINE_CONTENT = [
 const LINE_UNMARKED = 2;
 const LINE_MARKED = 4;
 const LINE_ELSEWHERE = 0;
+/**
+ * Valid only while the document still has its original line numbering — the tests using it
+ * all run BEFORE the one that inserts lines above it.
+ */
+const LINE_TRAILING_SPACE_MARKED = 10;
 
-/** Document order of the three embed widgets in `.cm-content`. */
+/** Document order of the four embed widgets in `.cm-content`. */
 const EMBED_UNMARKED = 0;
 const EMBED_MARKED = 1;
 const EMBED_INLINE_MARKED = 2;
+const EMBED_TRAILING_SPACE_MARKED = 3;
+const EMBED_COUNT = 4;
+/** Fixture lines carrying a whole-line fold marker: `LINE_MARKED` + `LINE_TRAILING_SPACE_MARKED`. */
+const MARKED_LINE_COUNT = 2;
 
 const CLS_FOLDABLE = "fen-embed";
 const CLS_COLLAPSED = "is-collapsed";
@@ -102,7 +119,7 @@ test.beforeAll(async () => {
 	await harness.setMarkdownViewMode("source");
 	// Live Preview is a flavour of EDITING mode, so enter editing mode first.
 	await harness.setLivePreviewEnabled(true);
-	await expect(embeds().nth(EMBED_INLINE_MARKED)).toBeAttached();
+	await expect(embeds().nth(EMBED_TRAILING_SPACE_MARKED)).toBeAttached();
 });
 
 test.afterAll(async () => {
@@ -138,6 +155,31 @@ function lineTextOfEmbed(nth: number): Promise<string> {
 /** Whether the embed's line still renders a trailing marker dash. */
 function lineEndsWithDash(nth: number): Promise<boolean> {
 	return lineTextOfEmbed(nth).then((text) => text.trimEnd().endsWith("-"));
+}
+
+/**
+ * The raw markdown rendered AFTER the nth embed on its line, character for character.
+ *
+ * WHY not `lineTextOfEmbed` + `trimEnd()`: trimming cannot tell "dash hidden, trailing space
+ * still rendered" from "dash AND space both hidden" — and which characters the hiding
+ * decoration covers is exactly what the trailing-space tests are about. Taking the line
+ * nodes that FOLLOW the embed's widget also drops the embed's own rendered text, which
+ * would otherwise swamp an exact comparison.
+ */
+function markdownAfterEmbed(nth: number): Promise<string> {
+	return embeds()
+		.nth(nth)
+		.evaluate((el) => {
+			const line = el.closest(".cm-line");
+			if (line === null) {
+				throw new Error("e2e: embed has no .cm-line ancestor (block widget?) — assertion would be vacuous");
+			}
+			const widgetIndex = Array.from(line.childNodes).findIndex((node) => node.contains(el));
+			return Array.from(line.childNodes)
+				.slice(widgetIndex + 1)
+				.map((node) => node.textContent ?? "")
+				.join("");
+		});
 }
 
 test("unmarked embed renders unfolded, with a visible body and a chevron", async () => {
@@ -189,6 +231,25 @@ test("the marker dash is revealed while the cursor is on its line", async () => 
 	await expect.poll(() => lineEndsWithDash(EMBED_MARKED)).toBe(false);
 });
 
+test("`![[child]]- ` with a trailing space still folds by default", async () => {
+	// A trailing space is invisible, so a marker that only works without one fails silently.
+	// Reading mode has always accepted it; Live Preview must agree.
+	await expectFolded(embeds().nth(EMBED_TRAILING_SPACE_MARKED), true);
+});
+
+test("only the dash is hidden on a marked line — its trailing space survives", async () => {
+	// The hiding decoration must cover EXACTLY the dash, matching reading mode (which strips
+	// the dash from the text node and leaves following whitespace verbatim). Asserted by exact
+	// text, since a `trimEnd()`-based check passes whether or not the space was swallowed too.
+	await expect.poll(() => markdownAfterEmbed(EMBED_TRAILING_SPACE_MARKED)).toBe(TRAILING_SPACE);
+
+	// ...and the reveal-while-editing path shows the dash back in its real place.
+	await harness.setCursor(LINE_TRAILING_SPACE_MARKED, 0);
+	await expect.poll(() => markdownAfterEmbed(EMBED_TRAILING_SPACE_MARKED)).toBe(`-${TRAILING_SPACE}`);
+
+	await harness.setCursor(LINE_ELSEWHERE, 0);
+});
+
 test("a mid-paragraph `![[child]]-` is foldable but keeps its literal dash", async () => {
 	const inlineMarked = embeds().nth(EMBED_INLINE_MARKED);
 	// AC3: only a WHOLE-LINE marker folds by default in Live Preview. The embed is
@@ -234,7 +295,7 @@ test("typing at the START of a folded embed's line keeps its fold state", async 
 });
 
 test("a code-span `![[child]]-` produces no embed widget and stays literal", async () => {
-	await expect(embeds()).toHaveCount(3);
+	await expect(embeds()).toHaveCount(EMBED_COUNT);
 	const codeSpanLineText = await page.evaluate(() => {
 		const lines = Array.from(document.querySelectorAll(".cm-content .cm-line"));
 		return lines.map((line) => line.textContent ?? "").find((text) => text.includes("stays literal")) ?? "";
@@ -272,7 +333,7 @@ test("in plain Source mode the marker dash renders literally", async () => {
 	// Park the cursor off the marked line: a cursor ON it reveals the dash anyway
 	// (see the reveal test), which would make the assertion below tautological.
 	await harness.setCursor(LINE_ELSEWHERE, 0);
-	// Baseline — in Live Preview the plugin hides the ONLY trailing dash in this note.
+	// Baseline — in Live Preview the plugin hides EVERY marker dash in this note.
 	await expect.poll(linesEndingWithDash).toBe(0);
 
 	await harness.setLivePreviewEnabled(false);
@@ -281,7 +342,7 @@ test("in plain Source mode the marker dash renders literally", async () => {
 	// decoration is gated on `editorLivePreviewField`. Counted over `.cm-line` text
 	// rather than matched against the literal `![[child]]-` so the assertion does not
 	// also encode how Obsidian itself renders (or stops rendering) the embed widget.
-	await expect.poll(linesEndingWithDash).toBe(1);
+	await expect.poll(linesEndingWithDash).toBe(MARKED_LINE_COUNT);
 });
 
 test("clicking a NESTED embed's title never folds the embed it sits inside", async () => {
@@ -344,8 +405,8 @@ test("deleting a folded embed's whole line does not hand its fold to the next em
 });
 
 /**
- * How many editor lines end in a `-`. Exactly one line of the fixture can (the
- * whole-line marked embed); the mid-paragraph and code-span lines end in text.
+ * How many editor lines end in a `-` (ignoring trailing blanks). Exactly the two whole-line
+ * marked embeds of the fixture can; the mid-paragraph and code-span lines end in text.
  */
 function linesEndingWithDash(): Promise<number> {
 	return page.evaluate(

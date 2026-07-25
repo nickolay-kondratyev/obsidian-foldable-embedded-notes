@@ -45,7 +45,8 @@ those genuinely differ per mode.
 - `src/livePreview/` — LIVE PREVIEW, a CM6 editor extension:
   - `markedEmbedLines.ts` — whole-line `![[x]]-` scan (cached in a StateField) + the
     decoration hiding the marker dash, gated on `editorLivePreviewField` so plain Source
-    mode stays verbatim.
+    mode stays verbatim. Trailing blanks after the dash are tolerated (reading mode accepts
+    them too, and they are invisible); the decoration hides EXACTLY the dash, never them.
   - `foldStateField.ts` — explicit fold state as a `RangeSet` (positions map through
     edits) + `effectiveFold`: an explicit choice beats the `foldedByDefault` default.
   - `livePreviewFoldExtension.ts` — ViewPlugin projecting that state onto Obsidian's embed

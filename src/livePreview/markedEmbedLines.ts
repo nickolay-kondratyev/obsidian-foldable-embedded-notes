@@ -15,13 +15,18 @@ import { editorLivePreviewField } from "obsidian";
  * WHY-NOT built by interpolating the reading-mode `FOLD_MARKER` constant: a literal
  * regex reads far better than one assembled from fragments, and the two parsers are
  * deliberately different rules — not one rule in two places.
+ *
+ * WHY blanks are tolerated after the dash: reading mode accepts `![[x]]- ` (its marker
+ * may be followed by whitespace), and a stray trailing space is INVISIBLE — requiring the
+ * dash to be the literal last character made the feature die silently in one mode only.
  */
-const WHOLE_LINE_MARKED_EMBED = /^!\[\[[^\]\n]+\]\]-$/;
+// `![[` target `]]`, the marker dash, then nothing but spaces/tabs to end of line.
+const WHOLE_LINE_MARKED_EMBED = /^!\[\[[^\]\n]+\]\]-[ \t]*$/;
 
 interface MarkedEmbedLine {
 	/** Document position of the line start — the fold-state anchor. */
 	readonly lineFrom: number;
-	/** Document position of the marker dash (last character of the line). */
+	/** Document position of the marker dash. */
 	readonly dashFrom: number;
 }
 
@@ -37,7 +42,9 @@ function findMarkedEmbedLines(doc: Text): MarkedEmbedLine[] {
 	let lineFrom = 0;
 	for (const text of doc.iterLines()) {
 		if (WHOLE_LINE_MARKED_EMBED.test(text)) {
-			found.push({ lineFrom, dashFrom: lineFrom + text.length - 1 });
+			// The marker dash is the line's LAST `-`, since the regex allows nothing but
+			// blanks after it. NOT `text.length - 1`: trailing blanks push that past the dash.
+			found.push({ lineFrom, dashFrom: lineFrom + text.lastIndexOf("-") });
 		}
 		// +1 for the line break separating this line from the next.
 		lineFrom += text.length + 1;
@@ -70,6 +77,9 @@ export function isMarkedLine(state: EditorState, lineFrom: number): boolean {
  *
  * Gated on `editorLivePreviewField`: in plain Source mode the raw text must render
  * literally, dash included.
+ *
+ * Hides EXACTLY the dash, never the blanks a line may carry after it — reading mode also
+ * strips only the dash from the text node and leaves the whitespace verbatim.
  */
 export const markerDashDecoration = EditorView.decorations.compute(
 	[markedEmbedLinesField, editorLivePreviewField, "selection"],
