@@ -3,7 +3,7 @@ id: nid_hsjklsk99tgzq3y97tv0kwfr1_e
 title: "Live Preview: deleting a folded embed's line transfers its fold to the NEXT embed"
 status: open
 deps: []
-links: []
+links: [nid_z4jq8me8mhstojozeua8fufdr_e]
 created_iso: 2026-07-25T00:44:48Z
 status_updated_iso: 2026-07-25T00:44:48Z
 type: bug

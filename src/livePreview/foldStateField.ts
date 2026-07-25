@@ -12,7 +12,11 @@ class ExplicitFold extends RangeValue {
 	 * it, so deleting the anchor's own line — a deletion STARTING at the anchor, i.e.
 	 * Obsidian's "delete line" — left it alive on whatever line moved up, silently folding
 	 * the NEXT embed. `TrackAfter` drops it as soon as a deletion consumes the character
-	 * AFTER the anchor, which is exactly "its line is gone".
+	 * AFTER the anchor. That COVERS "its line is gone" but is deliberately a bit wider:
+	 * deleting only the line's FIRST character (backspacing the leading `!`) also forgets
+	 * the fold, and an undo of a delete-line brings the embed back UNFOLDED because the
+	 * anchor is gone for good. Both are accepted — every case this widens errs toward
+	 * SHOWING content, and narrowing it costs materially more code than it buys.
 	 *
 	 * WHY-NOT `TrackBefore`/`TrackDel`: both keep the anchor here. And `TrackAfter` is inert
 	 * for an INSERTION at the anchor (`endA == pos`), so typing at the start of a folded

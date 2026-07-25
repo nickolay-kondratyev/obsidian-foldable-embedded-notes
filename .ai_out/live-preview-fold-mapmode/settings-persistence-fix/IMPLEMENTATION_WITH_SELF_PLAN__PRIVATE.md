@@ -1,7 +1,26 @@
 # PRIVATE — IMPLEMENTATION_WITH_SELF_PLAN, ticket nid_hsjklsk99tgzq3y97tv0kwfr1_e
 
-State: **COMPLETE**. Nothing left to do except git (owned by TOP_LEVEL_AGENT) and closing the
-ticket. If rehydrating: verify `git status` still shows the three modified files below.
+State: **COMPLETE**, through review-response iteration 1. Nothing left except git (owned by
+TOP_LEVEL_AGENT) and closing the ticket.
+
+## Iteration 1 (response to `IMPLEMENTATION_REVIEW__PUBLIC.md`) — DONE
+
+Reviewer said READY; 4 MINOR, all wording. Disposition in `IMPLEMENTATION_ITERATION__PUBLIC.md`.
+- MINOR-1/2 → one rewritten WHY block in `foldStateField.ts` (over-approximation named:
+  first-char deletion; undo no longer restores). NO behaviour change — reviewer concluded
+  TrackAfter is correct and I re-confirmed the widened cases all un-fold (safe direction).
+- MINOR-3 → CLAUDE.md sentence split into its OWN bullet, reviewer's phrasing.
+- MINOR-4 → no action (pre-existing, raised only to disclaim fallout).
+- Follow-up ticket **`nid_z4jq8me8mhstojozeua8fufdr_e`** filed (reading-mode `buildKey`
+  line-number key), linked to this ticket. Verified `buildKey` myself before filing.
+- lint 0 errors / build 0 (`.tmp/lint-iter.log`, `.tmp/build-iter.log`). e2e SKIPPED on
+  purpose — comments/docs only; prior 38/38 stands and the reviewer reproduced non-vacuity.
+- `git status` now: `CLAUDE.md`, `src/livePreview/foldStateField.ts`, the original ticket file
+  (link), + the new untracked ticket file. (`e2e/…` was committed in `c52f646`.)
+
+## Original pass (commit `c52f646`)
+
+If rehydrating: verify `git status` still shows the three modified files below.
 
 ## Plan (executed in this order)
 

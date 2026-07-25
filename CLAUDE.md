@@ -56,10 +56,10 @@ those genuinely differ per mode.
   fold together); it THROWS (never returns a sentinel) for a node CM cannot map. Only
   TOP-LEVEL embeds are wired — a nested one resolves to its parent's line, and it is the
   post-processor's business anyway. The widget DOM is Obsidian's and is REUSED across
-  edits, so every injection needs a matching removal in `destroy()`. A fold anchor lives
-  and dies with its LINE: `ExplicitFold.mapMode = TrackAfter`, so deleting the line drops
-  the anchor (it must not pass its fold to the embed that moves up) while an insertion at
-  the line start leaves it.
+  edits, so every injection needs a matching removal in `destroy()`.
+- A fold anchor lives and dies with its LINE (`ExplicitFold.mapMode = TrackAfter`): any
+  deletion consuming the character after the anchor drops it, so a deleted line cannot hand
+  its fold to the embed that moves up; insertions at the line start leave it.
 - `styles.css` — collapse (`.fen-folded`), forced-visible title bar, chevron rotation. All
   fold state is class-driven (no inline styles / no runtime `<style>`). Shared by both modes.
 - eslint scopes the obsidianmd plugin ruleset to `src/`; `e2e/` (Node/Playwright harness) and
