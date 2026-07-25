@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-foldable-embedded-notes",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"description": "Make embedded notes foldable in reading view and Live Preview, with a trailing-dash syntax to fold by default.",
 	"main": "main.js",
 	"type": "module",
