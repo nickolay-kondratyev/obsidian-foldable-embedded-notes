@@ -160,3 +160,89 @@ Noted only so the follow-up ticket keeps the pointer.
 - If B1 is fixed by dropping `file-embed`, CLAUDE.md's "The wait ENDS when…" paragraph needs
   to say the wait ends on media classes OR when the render goes away — the render-child bound
   is the real invariant, and stating it that way is both true and more durable.
+
+---
+
+# Re-review (iteration 1) — commits `cd2b366`, `2923d3a`, `dd46fcc`
+
+Reviewed the incremental diff `fbb018a..HEAD` and re-read the whole branch diff vs `4d30df8`
+for the final state. Fresh eyes on the final tree, everything below measured by me.
+
+## Verdict: READY
+
+All five round-1 findings are honestly disposed of: B1 and S1/S2 incorporated, N1 rejected for a
+CORRECT reason (polling an upper bound can only make it more permissive) with the better
+alternative taken, N2 correctly left to its ticket. No behaviour was dropped in the process, and
+the docs that were measured-false are now measured-true.
+
+## Gates I ran myself
+
+| Gate | Result |
+|---|---|
+| `npm run lint` | exit 0 — 0 errors, 1 PRE-EXISTING warning (`prefer-setting-definitions`, `src/settings/foldableEmbedsSettingTab.ts`) |
+| `npm run build` | exit 0 |
+| `npm run test:e2e` (full) | **57 passed, 0 failed** (11.0s) — `.tmp/rr2/e2e-full-1.log` |
+| observers spec, 4 standalone repeats | 5 passed each, ~2.0s — no flake under the new absolute `toBe` assertions |
+
+## What I verified, claim by claim
+
+**B1 fixed — re-measured, not taken on trust.** My round-1 probe against the CURRENT code:
+`before-create internal-embed is-loaded file-embed mod-empty` (observers=1) →
+`after-create internal-embed is-loaded markdown-embed inline-embed fen-embed`,
+foldable=1, marks=1, observers=0, `same-dom-node=[true]`. I also wrote a second probe
+(`.tmp/rr2/probe-late-usable.e2e.ts`) because "carries `fen-embed`" is not the same as "works":
+the late-resolved embed has its `.fen-collapse-icon` chevron and a title click folds it. PASSED.
+(Round 1's `chevrons=0` line was my probe's wrong selector, not a product gap.)
+
+**The original leak is NOT reintroduced by dropping the bail.** `git checkout 4d30df8 -- src/`
+→ the growth spec fails `Expected: 2 / Received: 6`; on HEAD it passes at exactly 2 across three
+fresh renders. The render-child bound is doing the whole job, as round 1 argued it would.
+
+**`mod-empty` / `mod-generic` reasoning is sound and the WHY-NOTs are TRUE.** `mod-empty` is
+"missing right now" (proved above). `mod-generic` really is terminal, and NOT special-casing it
+is the right call: its wait is already bounded by its render, so the only thing a class check
+buys is another terminality assumption of exactly the kind that caused B1. No embed shape is
+left waiting with an observer the render-child binding cannot reclaim — `onunload` disconnects
+and calls `forgetObserver` on every path (self-stop, `containerEl` removal, `teardown()`), and
+the one shape Obsidian keeps DOM for (a nested embed in a Live Preview widget) is covered by the
+`teardown()` loop that was correctly kept.
+
+**Both new specs are honest and RED for the right reason** (each verified by me, src restored
+after):
+- `MEDIA_EMBED_CLASSES` with `file-embed` put back → "target created later becomes foldable"
+  fails `toHaveCount(1) / Received: 0`. This is the test that would have caught B1.
+- `if (false && this.pendingEmbeds.has(embed))` → the whitebox spec fails
+  `Expected: 2 / Received: 4`, exactly as claimed.
+The whitebox double-`process` spec is legitimate, not a hack that will rot: it drives the REAL
+`process` over REAL rendered DOM, stubs only the two context members `process` consumes, and
+throws with an actionable message if the internal shape moves instead of silently passing. The
+alternative — a production-side seam — would exist only for this test.
+
+**S2 guard is correct.** `pendingEmbeds` is a `WeakSet`, so it cannot leak by construction, and
+it is released in `forgetObserver`, which every unload path funnels through — including the
+error path (`pending.unload()` happens BEFORE `onReady`, so an exception in `makeFoldable`
+cannot strand the entry) and embeds that never resolve (released when the span leaves the DOM or
+`teardown()` runs). Behaviour is unchanged for the reused-DOM case it targets: before the guard,
+the second observer's `onReady` would have bailed on `wiredEmbeds` anyway, so the first render
+won then too.
+
+## 💡 Suggestions (non-blocking, no round needed)
+
+- **A second pass now discards its own `ctx` binding.** When the guard bails, that pass's
+  `ctx.addChild` never runs, so the wait stays owned by the FIRST render. The self-healing
+  ordering (pass-1 child unloads → `forgetObserver` releases the entry → a later pass re-arms)
+  covers the realistic case; the inverse ordering (pass 2, then pass-1's component unloads while
+  the span survives, and no further pass comes) would leave the span unwatched until the next
+  render. Theoretical, unmeasurable from a reading-mode spec, and strictly better than the leak
+  it replaces — worth one sentence in the `pendingEmbeds` comment if it is ever revisited.
+- **The SYNC `isMediaEmbed` bail is new relative to `4d30df8`** (baseline only stopped observing
+  on a mutation). I checked it: a media class implies a resolved, extension-bearing target, which
+  cannot become markdown, so it is safe — noted only because it is the one remaining place a
+  class is trusted as terminal.
+
+## Documentation
+
+`MEDIA_EMBED_CLASSES`, the post-processor class doc, `PendingEmbedObserver`, `WiredElements` and
+CLAUDE.md's "The wait ENDS when…" bullet all now state the render-child bound as the invariant
+and the `mod-empty` fact as measured. I re-read each against the code and the measurements: true
+as written. No further documentation updates needed.
