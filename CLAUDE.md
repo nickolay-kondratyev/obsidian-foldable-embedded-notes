@@ -37,11 +37,21 @@ those genuinely differ per mode.
   and `unmark` (the inverse, for teardown).
 - `src/foldStateStore.ts` — in-memory session fold state for reading mode (`Map`, no
   persistence).
+- `src/wiredElements.ts` — the "already wired by THIS instance" guard both modes use: a
+  `WeakSet`, deliberately NOT a DOM check, so a re-enabled plugin can rewire DOM its
+  predecessor marked.
+- `src/foldableEmbedMark.ts` — one reading-mode embed's injected state and its exact
+  inverse, as a `MarkdownRenderChild` (`ctx.addChild`) owning an `AbortController` for the
+  title listener. MEASURED on 1.12.7: `ctx.addChild` does NOT fire on plugin disable, so
+  the post-processor also unloads every live mark itself — needed because embed BODIES
+  inside Live Preview widgets are Obsidian's REUSED DOM, unlike a reading view (discarded
+  wholesale on toggle).
 - `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note
   embeds load async, so it waits (MutationObserver, or sync when ready) for
   `.markdown-embed` + title, then: strict `-` marker parse/strip on the embed span's next
   text-node sibling, initial fold state (session store wins over the `foldedByDefault`
-  default), and DOM wiring via `EmbedFoldDom`.
+  default), and DOM wiring via `EmbedFoldDom` under one `FoldableEmbedMark`. `teardown()`
+  (called from `onunload`) stops the observers and unloads every live mark.
 - `src/livePreview/` — LIVE PREVIEW, a CM6 editor extension:
   - `markedEmbedLines.ts` — whole-line `![[x]]-` scan (cached in a StateField) + the
     decoration hiding the marker dash, gated on `editorLivePreviewField` so plain Source

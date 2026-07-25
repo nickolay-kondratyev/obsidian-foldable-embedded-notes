@@ -1,8 +1,10 @@
 import { MarkdownPostProcessorContext } from "obsidian";
 import { EmbedFoldDom } from "./embedFoldDom";
+import { FoldableEmbedMark } from "./foldableEmbedMark";
 import { FoldStateStore } from "./foldStateStore";
 import { foldedByDefault } from "./settings/foldableEmbedsSettings";
 import type { ReadSettings } from "./settings/foldableEmbedsSettings";
+import { WiredElements } from "./wiredElements";
 
 /** Single fold marker character; `![[x]]-` folds by default. */
 const FOLD_MARKER = "-";
@@ -24,18 +26,39 @@ type OnTitleReady = (title: HTMLElement) => void;
 export class FoldableEmbedsPostProcessor {
 	/** Observers still waiting for an embed to resolve; disconnected on plugin unload. */
 	private readonly liveObservers = new Set<MutationObserver>();
+	/**
+	 * Embeds this instance has made foldable and not yet given up. Strong references on
+	 * purpose — {@link teardown} has to reach them — and bounded by every mark removing
+	 * itself here as soon as Obsidian unloads whatever rendered it.
+	 */
+	private readonly liveMarks = new Set<FoldableEmbedMark>();
+	private readonly wiredEmbeds = new WiredElements();
 
 	constructor(
 		private readonly store: FoldStateStore,
 		private readonly readSettings: ReadSettings,
 	) {}
 
-	/** Disconnects every still-live observer (e.g. a never-resolving `![[missing]]`) on unload. */
-	disconnectAll(): void {
+	/**
+	 * Undoes everything this instance did to the DOM, for plugin unload.
+	 *
+	 * Both halves are needed: still-live observers (e.g. a never-resolving `![[missing]]`)
+	 * must stop, and every mark must come off — Obsidian discards a reading view wholesale
+	 * on unload, but an embed BODY inside a Live Preview widget is DOM Obsidian keeps.
+	 */
+	teardown(): void {
 		for (const observer of this.liveObservers) {
 			observer.disconnect();
 		}
 		this.liveObservers.clear();
+		// Unloaded HERE and not left to `ctx.addChild`: MEASURED against Obsidian 1.12.7,
+		// disabling the plugin does NOT unload the render components its children hang off,
+		// so a nested embed inside a Live Preview widget kept every mark (e2e proves it).
+		// Copied: each unload calls back into `forget`, which mutates this set.
+		for (const mark of Array.from(this.liveMarks)) {
+			mark.unload();
+		}
+		this.liveMarks.clear();
 	}
 
 	readonly process = (el: HTMLElement, ctx: MarkdownPostProcessorContext): void => {
@@ -55,27 +78,48 @@ export class FoldableEmbedsPostProcessor {
 		indexWithinSection: number,
 	): void {
 		// Guard against a second post-process pass over the same live DOM.
-		if (embed.classList.contains(EmbedFoldDom.CLS_FOLDABLE)) {
+		if (this.wiredEmbeds.has(embed)) {
 			return;
 		}
 		const hasFoldMarker = this.stripFoldMarker(embed);
 		const key = this.buildKey(embed, ctx, sectionEl, indexWithinSection);
 		const folded = this.store.get(key) ?? foldedByDefault(this.readSettings(), hasFoldMarker);
 
+		const mark = new FoldableEmbedMark(embed, (unloaded) => this.forget(unloaded));
+		this.liveMarks.add(mark);
+		this.wiredEmbeds.add(embed);
+		// Loaded HERE rather than left to `ctx.addChild` below (which loads it only while the
+		// rendering component itself is loaded): a component that was never loaded ignores
+		// `unload()`, and then `teardown()` could not undo this mark.
+		mark.load();
+
 		EmbedFoldDom.markFoldable(embed);
 		const chevron = EmbedFoldDom.ensureChevron(title);
 		EmbedFoldDom.applyFoldState(embed, chevron, folded);
 
-		// The listener lives and dies with this freshly-created title element, so it
-		// needs no explicit deregistration (unlike Live Preview's, whose title DOM is
-		// Obsidian's and survives unload).
-		EmbedFoldDom.onTitleClick(title, () => {
-			// Inverts what is DISPLAYED — see EmbedFoldDom.isFolded for WHY that, and not
-			// the recomputed default, is the operand (Live Preview's toggle matches).
-			const nowFolded = !EmbedFoldDom.isFolded(embed);
-			EmbedFoldDom.applyFoldState(embed, chevron, nowFolded);
-			this.store.set(key, nowFolded);
-		});
+		EmbedFoldDom.onTitleClick(
+			title,
+			() => {
+				// Inverts what is DISPLAYED — see EmbedFoldDom.isFolded for WHY that, and not
+				// the recomputed default, is the operand (Live Preview's toggle matches).
+				const nowFolded = !EmbedFoldDom.isFolded(embed);
+				EmbedFoldDom.applyFoldState(embed, chevron, nowFolded);
+				this.store.set(key, nowFolded);
+			},
+			// The title element can be Obsidian's and outlive this render (a nested embed
+			// inside a Live Preview widget), so the listener needs a real removal path.
+			mark.listenerOptions,
+		);
+
+		// LAST: adding the child can unload it right away (the rendering component may already
+		// be gone), and that unload must find everything above in place to undo it.
+		ctx.addChild(mark);
+	}
+
+	/** A mark has undone itself: drop it, and let the embed be wired again by a later render. */
+	private forget(mark: FoldableEmbedMark): void {
+		this.liveMarks.delete(mark);
+		this.wiredEmbeds.remove(mark.embed);
 	}
 
 	/**
@@ -140,7 +184,7 @@ export class FoldableEmbedsPostProcessor {
 	}
 
 	private whenMarkdownEmbedReady(embed: HTMLElement, onReady: OnTitleReady): void {
-		if (embed.classList.contains(EmbedFoldDom.CLS_FOLDABLE)) {
+		if (this.wiredEmbeds.has(embed)) {
 			return;
 		}
 		const readyTitle = this.markdownEmbedTitle(embed);

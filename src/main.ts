@@ -32,6 +32,6 @@ export default class FoldableEmbeddedNotesPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		this.postProcessor?.disconnectAll();
+		this.postProcessor?.teardown();
 	}
 }

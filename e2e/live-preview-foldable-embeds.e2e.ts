@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
-import { expectFolded } from "./foldAssertions";
+import { CLS_FOLDED, expectFolded } from "./foldAssertions";
 import { ObsidianHarness } from "./obsidianHarness";
 
 /**
@@ -409,6 +409,49 @@ test("clicking a NESTED embed's title never folds the embed it sits inside", asy
 	await expectFolded(outer, true);
 });
 
+/**
+ * Teardown of the marks the READING-MODE post-processor puts on embeds NESTED inside Live
+ * Preview widget DOM. That DOM is Obsidian's and is REUSED across a plugin unload (unlike a
+ * real reading view, which Obsidian discards wholesale), so nothing cleans it up for us:
+ * without an explicit removal path the disabled plugin leaves a stray chevron behind, keeps
+ * folding through a zombie listener, and blocks its own successor from rewiring.
+ */
+test("disabling the plugin strips its injected DOM from NESTED embeds, and re-enabling rewires them", async () => {
+	await harness.openFile(NESTED_PARENT_PATH);
+	await harness.setMarkdownViewMode("source");
+	await harness.setLivePreviewEnabled(true);
+	// Baseline: the nested embed really is wired before the plugin goes away.
+	await expect(nestedEmbed().locator(".fen-collapse-icon")).toBeAttached();
+
+	await harness.setPluginEnabled(false);
+
+	// Asserted BEFORE any view rebuild (which would restore pristine DOM on its own and hide
+	// a leaky teardown). Counted over the WHOLE editor, so the nested embed is included.
+	await expect(page.locator(`.cm-content .${CLS_FOLDABLE}`)).toHaveCount(0);
+	await expect(page.locator(".cm-content .fen-collapse-icon")).toHaveCount(0);
+	await expect(page.locator(`.cm-content .${CLS_FOLDED}`)).toHaveCount(0);
+
+	// No zombie listener: with the plugin off, the nested title behaves as unpatched
+	// Obsidian — the click folds nothing, and nothing swallows its default action.
+	expect(await clickNestedTitleInPage()).toEqual({ folded: false, defaultPrevented: false });
+
+	await harness.setPluginEnabled(true);
+	// Leave the note and come back: MEASURED against Obsidian 1.12.7, a preview/source
+	// round trip REUSES an already-rendered embed body, so the reloaded plugin's
+	// post-processor is never invoked over it — only reopening the note renders it afresh.
+	// (That is the plugin's documented rule everywhere: a change lands on the NEXT render.)
+	await harness.openFile(NOTE_PATH);
+	await harness.openFile(NESTED_PARENT_PATH);
+	await harness.setMarkdownViewMode("source");
+	await expect(nestedEmbed().locator(".fen-collapse-icon")).toBeAttached();
+
+	// Fold state is per-instance, so a reload starts clean: the nested embed is unfolded and
+	// one click must fold it — proving the new instance really wired this title.
+	await expectFolded(nestedEmbed(), false);
+	await nestedEmbed().locator(".markdown-embed-title").click();
+	await expectFolded(nestedEmbed(), true);
+});
+
 test("deleting a folded embed's whole line does not hand its fold to the next embed", async () => {
 	// Its OWN file, opened LAST: this test deletes a line, so keeping it away from the
 	// shared `lp-embeds.md` fixture means there is nothing for it to restore.
@@ -442,6 +485,46 @@ test("deleting a folded embed's whole line does not hand its fold to the next em
 	await second.locator(".markdown-embed-title").click();
 	await expectFolded(second, true);
 });
+
+/** The innermost embed of the `lp-nested.md` fixture — the one no mode WIRES on purpose. */
+function nestedEmbed(): Locator {
+	return page.locator(`.cm-content .internal-embed[src="${NESTED_CHILD_NAME}"] .internal-embed[src="${NESTED_GRANDCHILD_NAME}"]`);
+}
+
+/** What one click on a nested embed's title did, measured in the click's own turn. */
+interface NestedTitleClickOutcome {
+	/** Whether the embed came out of the click FOLDED. */
+	readonly folded: boolean;
+	/** Whether a listener swallowed Obsidian's own "open the embedded note" default. */
+	readonly defaultPrevented: boolean;
+}
+
+/**
+ * Clicks the nested embed's title and reads the outcome SYNCHRONOUSLY, inside the same
+ * `dispatchEvent` turn.
+ *
+ * WHY not `locator.click()` + a polled assertion: the claim here is that NOTHING happened,
+ * and a poll for absence is green during the window before a zombie listener has run. A
+ * listener runs DURING `dispatchEvent`, so reading the class right after it leaves no such
+ * window. It also survives Obsidian's default action navigating away from the note.
+ */
+function clickNestedTitleInPage(): Promise<NestedTitleClickOutcome> {
+	return page.evaluate((target) => {
+		const nested = document.querySelector(
+			`.cm-content .internal-embed[src="${target.childName}"] .internal-embed[src="${target.grandchildName}"]`,
+		);
+		if (nested === null) {
+			throw new Error("e2e: nested embed not found — the assertion would be vacuous");
+		}
+		const title = nested.querySelector(".markdown-embed-title");
+		if (title === null) {
+			throw new Error("e2e: nested embed has no title bar — the assertion would be vacuous");
+		}
+		const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+		title.dispatchEvent(click);
+		return { folded: nested.classList.contains(target.foldedClass), defaultPrevented: click.defaultPrevented };
+	}, { childName: NESTED_CHILD_NAME, grandchildName: NESTED_GRANDCHILD_NAME, foldedClass: CLS_FOLDED });
+}
 
 /**
  * How many editor lines end in a `-` (ignoring trailing blanks). Exactly the two whole-line

@@ -3,6 +3,7 @@ import { EditorView, ViewPlugin } from "@codemirror/view";
 import type { PluginValue, ViewUpdate } from "@codemirror/view";
 import { EmbedFoldDom } from "../embedFoldDom";
 import type { ReadSettings } from "../settings/foldableEmbedsSettings";
+import { WiredElements } from "../wiredElements";
 import { effectiveFold, explicitFoldField, foldStateExtension, setLineFold } from "./foldStateField";
 import { markerDashDecoration } from "./markedEmbedLines";
 
@@ -18,12 +19,8 @@ class LivePreviewFoldView implements PluginValue {
 	private readonly contentObserver: MutationObserver;
 	/** One abort for every title listener this view added. */
 	private readonly listeners = new AbortController();
-	/**
-	 * Titles already wired for clicks. Deliberately NOT inferred from "a chevron
-	 * exists": a re-enabled plugin can meet a leftover chevron whose listener died
-	 * with the previous view, and would then never rewire it.
-	 */
-	private readonly wiredTitles = new WeakSet<HTMLElement>();
+	/** Titles already wired for clicks — see {@link WiredElements} for WHY not a DOM check. */
+	private readonly wiredTitles = new WiredElements();
 
 	constructor(
 		private readonly view: EditorView,
