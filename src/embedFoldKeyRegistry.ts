@@ -33,6 +33,17 @@ interface KeySlot {
  *   right before it is needed, and memoises: one element has ONE key for as long as it lives,
  *   so a host and the embeds nested in it can never disagree about the prefix.
  *
+ * MEASURED on Obsidian 1.12.7 (probe logging every host lookup): in a READING view every
+ * nested embed found its host already registered, both with a warm cache (host key
+ * `…::occ::child::#0` / `#1`) and a cold one (`…::L2` / `::L4`) — the two occurrences stayed
+ * distinct either way. The only `unseen` lookups came from the hidden LIVE PREVIEW editor of
+ * the same leaf, whose top-level embed spans CM6 builds — see `EmbedFoldKeys.unseenHostKey`.
+ *
+ * CONSEQUENCE, deliberate: a nested embed in a reading view and the same one in a Live
+ * Preview pane now key differently (registered host vs unseen host), so their folds no longer
+ * bleed into each other. That bleed was the same collision this ticket removes, and top-level
+ * embeds have never shared fold state across the two modes either.
+ *
  * A `WeakMap` keyed on the live span, like `WiredElements`: per plugin INSTANCE (a re-enabled
  * plugin re-derives everything) and never keeping detached DOM alive.
  */

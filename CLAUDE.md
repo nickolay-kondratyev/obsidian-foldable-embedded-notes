@@ -46,8 +46,17 @@ those genuinely differ per mode.
   delimited, `sourcePath` prefix parseable for per-file invalidation later. A cache that
   cannot answer — MEASURED: it is COLD for the first render(s) after launch — degrades to a
   weak positional key (`L…`/`S…` locator, so keys never collide) which the first render that
-  CAN derive an occurrence key takes over, via `FoldStateStore.adoptRecordingOf`. What the
-  key does and does NOT survive is documented ONCE, on the module.
+  CAN derive an occurrence key takes over, via `FoldStateStore.adoptRecordingOf`. A NESTED
+  embed states its occurrence in the CHILD note, so it has no identity of its own — its key is
+  QUALIFIED by its host's (`<hostKey>::in::<ownKey>`, `nestedIn`). What the key does and does
+  NOT survive is documented ONCE, on the module.
+- `src/embedFoldKeyRegistry.ts` — the host lookup behind that: every embed span is registered
+  SYNCHRONOUSLY in the post-processor and its key derived LAZILY (and memoised) on first use.
+  That is what makes the lookup ORDERING-FREE — an embed BODY is post-processed only after the
+  section holding its host span was, so the host is always registered (MEASURED), with no
+  dependence on the host having been WIRED. A host the post-processor never saw — in practice
+  a top-level LIVE PREVIEW embed, whose span CM6 builds — degrades to `host::<src>`: KNOWN
+  LIMITATION, two Live Preview embeds of the same note still share their nested folds.
 - `src/wiredElements.ts` — the "already wired by THIS instance" guard both modes use: a
   `WeakSet`, deliberately NOT a DOM check, so a re-enabled plugin can rewire DOM its
   predecessor marked.
