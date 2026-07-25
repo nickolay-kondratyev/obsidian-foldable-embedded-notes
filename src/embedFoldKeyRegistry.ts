@@ -44,6 +44,14 @@ interface KeySlot {
  * bleed into each other. That bleed was the same collision this ticket removes, and top-level
  * embeds have never shared fold state across the two modes either.
  *
+ * The fallback is NOT safe, it is only the least bad answer: a host lookup MISS falls back to
+ * `EmbedFoldKeys.unseenHostKey`, which identifies a host by its link alone — so two hosts of
+ * the same note re-collide into exactly the bug this ticket fixes, and no `adoptRecordingOf`
+ * takeover can undo that (the two keys are equal, not weaker/stronger). Per-element counters
+ * would never collide, but a host's nested folds would then be lost on every rebuild of that
+ * DOM; the measurement above says reading mode never takes this path, so the trade is not
+ * worth making. Live Preview, which always takes it, is ticket nid_jdpdpu7w0nfda3y4decz7f6xy_e.
+ *
  * A `WeakMap` keyed on the live span, like `WiredElements`: per plugin INSTANCE (a re-enabled
  * plugin re-derives everything) and never keeping detached DOM alive.
  */
@@ -55,6 +63,11 @@ export class EmbedFoldKeyRegistry {
 	/**
 	 * Remembers how to key this embed span, and hands back its (not yet derived) key.
 	 * An already-registered span keeps its FIRST registration — see the memoisation note above.
+	 *
+	 * A slot deliberately outlives the MARK on the same span: unwiring (`FoldableEmbedMark`
+	 * unload) clears `WiredElements` but not this map, so a REUSED span that is rewired keeps
+	 * the key it already handed to the embeds nested inside it. Re-deriving instead would let
+	 * a host disagree with its own children.
 	 */
 	register(embed: HTMLElement, derive: DeriveEmbedFoldKey): PendingEmbedFoldKey {
 		const existing = this.slots.get(embed);

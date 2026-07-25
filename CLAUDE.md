@@ -55,8 +55,11 @@ those genuinely differ per mode.
   That is what makes the lookup ORDERING-FREE — an embed BODY is post-processed only after the
   section holding its host span was, so the host is always registered (MEASURED), with no
   dependence on the host having been WIRED. A host the post-processor never saw — in practice
-  a top-level LIVE PREVIEW embed, whose span CM6 builds — degrades to `host::<src>`: KNOWN
-  LIMITATION, two Live Preview embeds of the same note still share their nested folds.
+  a top-level LIVE PREVIEW embed, whose span CM6 builds — degrades to `host::<src>`, which
+  identifies a host by its LINK alone. KNOWN LIMITATION (MEASURED): in Live Preview nested
+  embeds therefore still share ONE fold state across ALL hosts — same host note and different
+  host notes alike. Pre-existing, unchanged by this key; ticket
+  nid_jdpdpu7w0nfda3y4decz7f6xy_e.
 - `src/wiredElements.ts` — the "already wired by THIS instance" guard both modes use: a
   `WeakSet`, deliberately NOT a DOM check, so a re-enabled plugin can rewire DOM its
   predecessor marked.

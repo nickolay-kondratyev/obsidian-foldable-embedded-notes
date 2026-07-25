@@ -130,16 +130,17 @@ export class EmbedFoldKeys {
 	 * `own`, qualified by the key of the HOST embed it is rendered inside — the identity a
 	 * nested embed has no way to state itself (see the note on nesting above).
 	 *
-	 * The superseded key is qualified by the host's OWN superseded key when it has one: an
-	 * earlier, colder render of this pair would have keyed BOTH levels weakly, so that is the
-	 * key the recording to be taken over actually sits under.
+	 * The superseded key is built from BOTH levels' superseded keys, each falling back to its
+	 * own current one: a nested embed's OWN key never has a superseded half (its section is
+	 * always null, so it is already the fallback key), but its HOST's does — so an earlier,
+	 * colder render of this pair recorded the fold under `<hostFallback>::in::<own>`, and that
+	 * is the key `FoldStateStore.adoptRecordingOf` has to reclaim. Null when the two coincide,
+	 * i.e. when nothing weaker was ever in play.
 	 */
 	nestedIn(host: EmbedFoldKey, own: EmbedFoldKey): EmbedFoldKey {
-		return {
-			current: this.qualify(host.current, own.current),
-			superseded:
-				own.superseded === null ? null : this.qualify(host.superseded ?? host.current, own.superseded),
-		};
+		const current = this.qualify(host.current, own.current);
+		const superseded = this.qualify(host.superseded ?? host.current, own.superseded ?? own.current);
+		return { current, superseded: superseded === current ? null : superseded };
 	}
 
 	/**
@@ -148,8 +149,15 @@ export class EmbedFoldKeys {
 	 *
 	 * Reached only for a host that the reading-mode post-processor never saw — in practice a
 	 * TOP-LEVEL Live Preview embed, whose span CM6 builds while only its BODY goes through the
-	 * post-processor. KNOWN LIMITATION: two Live Preview embeds of the SAME note therefore
-	 * still share the fold state of the embeds nested inside them; different notes no longer do.
+	 * post-processor.
+	 *
+	 * KNOWN LIMITATION, MEASURED on Obsidian 1.12.7: this key identifies a host by its LINK
+	 * alone, which is identical for every occurrence of it anywhere — and a nested embed's own
+	 * key is identical too (same child note, same section text, same index). So in Live Preview
+	 * nested embeds STILL share one fold state ENTIRELY: between two embeds of the same host
+	 * note AND between different host notes embedding it. That is unchanged, pre-existing
+	 * behaviour, not something this key made worse. Fixing it needs a stable identity for a CM6
+	 * widget span, which is Live Preview's business — ticket nid_jdpdpu7w0nfda3y4decz7f6xy_e.
 	 */
 	unseenHostKey(hostSrc: string): EmbedFoldKey {
 		return { current: `${EmbedFoldKeys.UNSEEN_HOST_LOCATOR}::${hostSrc}`, superseded: null };
