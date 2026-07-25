@@ -62,9 +62,9 @@ those genuinely differ per mode.
   embeds therefore still share ONE fold state across ALL hosts — same host note and different
   host notes alike. Pre-existing, unchanged by this key; ticket
   nid_jdpdpu7w0nfda3y4decz7f6xy_e.
-- `src/wiredElements.ts` — the "already wired by THIS instance" guard both modes use: a
-  `WeakSet`, deliberately NOT a DOM check, so a re-enabled plugin can rewire DOM its
-  predecessor marked.
+- `src/wiredElements.ts` — the "already handled by THIS instance" guard (wired for clicks, or
+  being waited on) both modes use: a `WeakSet`, deliberately NOT a DOM check, so a re-enabled
+  plugin can rewire DOM its predecessor marked.
 - `src/foldableEmbedMark.ts` — one reading-mode embed's injected state and its exact
   inverse, as a `MarkdownRenderChild` (`ctx.addChild`) owning an `AbortController` for the
   title listener. Its unload trigger is the DOM: `MarkdownPostProcessorContext.addChild`
@@ -80,8 +80,9 @@ those genuinely differ per mode.
     Preview's top-level embeds, which `registerEditorExtension` rebuilds immediately.
 - `src/pendingEmbedObserver.ts` — the reading-mode WAIT for one embed to finish loading, as a
   `MarkdownRenderChild` over the SAME contract: the MutationObserver dies with the embed span
-  it observes, so an embed that never resolves (`![[missing]]`) can no longer leave an
-  observer per render behind (ticket nid_78cl6bo3t8umqbndughsbjez9_e; MEASURED 2 → 4 → 6).
+  it observes, so an embed that has not resolved YET (`![[missing]]`) can no longer leave an
+  observer per render behind (ticket nid_78cl6bo3t8umqbndughsbjez9_e; MEASURED 2 → 4 → 6)
+  while STILL being watched for the moment its target appears.
   Plugin disable is the same asymmetry as a mark's — MEASURED: it unloads a reading-view
   observer but NOT one on a nested embed inside a Live Preview widget, hence `teardown()`.
 - `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note
@@ -91,11 +92,14 @@ those genuinely differ per mode.
   the `foldedByDefault` default), and DOM wiring via `EmbedFoldDom` under one
   `FoldableEmbedMark`. `teardown()` (called from `onunload`) unloads every live observer and
   every live mark — for the SAME reason, see `PendingEmbedObserver`.
-  - The wait ENDS when Obsidian settles the embed as a non-note one (`NON_NOTE_EMBED_CLASSES`,
-    which includes `file-embed` — any other file type, and `mod-empty`, a target that does not
-    exist). MEASURED: an embed's classes are assigned in ONE shot, bare `internal-embed` at
-    post-process time, so `file-embed` never shows up transiently on something that later
-    resolves to a note.
+  - The wait ENDS when the embed's RENDER goes away — that render-child bound, not any reading
+    of Obsidian's classes, is the invariant. The one class-based shortcut is
+    `MEDIA_EMBED_CLASSES`: resolved media cannot become a note. Deliberately NOT `file-embed`:
+    `mod-empty` means "target missing RIGHT NOW", and MEASURED on 1.12.7 Obsidian upgrades that
+    SAME span in place once the note is created — treating it as settled silently killed
+    "create the missing note and the embed becomes foldable" (pinned by
+    `e2e/unresolved-embed-observers.e2e.ts`). An unresolved embed therefore keeps ONE observer
+    for as long as it is on screen; a per-instance `WeakSet` keeps it at exactly one.
   - The marker arms only when the dash is followed by whitespace or a real END OF LINE —
     nothing after it in its PARENT element, or a `<br>`. NOT merely the end of that text
     node, or `![[x]]-**bold**` (markup renders as a sibling element) would swallow a dash

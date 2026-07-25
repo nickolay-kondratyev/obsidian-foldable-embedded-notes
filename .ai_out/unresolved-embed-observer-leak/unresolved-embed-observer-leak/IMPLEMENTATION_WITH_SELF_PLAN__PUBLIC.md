@@ -1,5 +1,11 @@
 # Implementation: unresolved-embed observer leak (nid_78cl6bo3t8umqbndughsbjez9_e)
 
+> **Iteration 1 (post-review) supersedes parts of this file.** The ticket's design point 1
+> (classify `file-embed` as settled) was WRONG and has been REMOVED: `mod-empty` means "target
+> missing right now", and Obsidian upgrades that span in place when the note appears. See
+> `IMPLEMENTATION_ITERATION__PUBLIC.md`. Current state: `MEDIA_EMBED_CLASSES` (no `file-embed`),
+> a per-instance "already waiting" guard, and two extra e2e tests — **57 passed** in full.
+
 ## What changed
 
 - **NEW `src/pendingEmbedObserver.ts`** — `PendingEmbedObserver extends MarkdownRenderChild`:
