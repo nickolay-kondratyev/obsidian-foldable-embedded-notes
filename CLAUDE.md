@@ -43,14 +43,11 @@ those genuinely differ per mode.
   `ReadEmbeds` port injected in `main.ts` (never the whole `App`). The cache entry is located
   by POSITION (section line window, then ordinal within it), never by joining the DOM `src`
   against `EmbedCache.link`. Shape `sourcePath::occ::<link>::#<ordinal>`: opaque, `::`
-  delimited, `sourcePath` prefix parseable for per-file invalidation later.
-  - STABLE under: insertions/deletions ABOVE the embed, and unrelated embeds added anywhere.
-    NOT stable under: deleting an earlier same-link embed (its ordinal is inherited — ticket
-    `nid_z4jq8me8mhstojozeua8fufdr_e`), or a cache that cannot answer, which degrades to the
-    pre-existing weak line/section-hash key (`L…`/`S…` locator, so keys never collide).
-    MEASURED: the cache is COLD for the first render(s) after Obsidian launches, so folds made
-    in that window do not survive the next render. `e2e/obsidianHarness.ts:openFile` waits out
-    that window so specs measure the plugin, not Obsidian's boot race.
+  delimited, `sourcePath` prefix parseable for per-file invalidation later. A cache that
+  cannot answer — MEASURED: it is COLD for the first render(s) after launch — degrades to a
+  weak positional key (`L…`/`S…` locator, so keys never collide) which the first render that
+  CAN derive an occurrence key takes over, via `FoldStateStore.adoptRecordingOf`. What the
+  key does and does NOT survive is documented ONCE, on the module.
 - `src/wiredElements.ts` — the "already wired by THIS instance" guard both modes use: a
   `WeakSet`, deliberately NOT a DOM check, so a re-enabled plugin can rewire DOM its
   predecessor marked.
@@ -71,8 +68,9 @@ those genuinely differ per mode.
   embeds load async, so it waits (MutationObserver, or sync when ready) for
   `.markdown-embed` + title, then: strict `-` marker parse/strip on the embed span's next
   text-node sibling, the `EmbedFoldKeys` identity, initial fold state (session store wins over
-  the `foldedByDefault` default), and DOM wiring via `EmbedFoldDom` under one `FoldableEmbedMark`. `teardown()`
-  (called from `onunload`) stops the observers and unloads every live mark.
+  the `foldedByDefault` default), and DOM wiring via `EmbedFoldDom` under one
+  `FoldableEmbedMark`. `teardown()` (called from `onunload`) stops the observers and unloads
+  every live mark.
   - The marker arms only when the dash is followed by whitespace or a real END OF LINE —
     nothing after it in its PARENT element, or a `<br>`. NOT merely the end of that text
     node, or `![[x]]-**bold**` (markup renders as a sibling element) would swallow a dash

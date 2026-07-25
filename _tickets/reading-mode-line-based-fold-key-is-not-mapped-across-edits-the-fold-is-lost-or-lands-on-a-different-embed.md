@@ -40,3 +40,13 @@ Key the OCCURRENCE rather than the line — e.g. `sourcePath::src::#nthOccurrenc
 **2026-07-25T06:28:48Z**
 
 Implemented the occurrence key (src/embedFoldKeys.ts + ReadEmbeds port from src/main.ts); e2e/reading-mode-fold-key.e2e.ts covers both measured scenarios and was failing-first. Cold-metadata-cache window at app launch filed separately as nid_zf4num1ja4c9tpwpgj672ijgn_e.
+
+**2026-07-25T06:54:00Z**
+
+Review iteration 1 response (IMPLEMENTATION_WITH_SELF_PLAN).
+
+BLOCKING B1 (the cold-cache window was a REGRESSION against the line key, not just an unfixed edge) is fixed in the PRODUCT, not the harness: `EmbedFoldKey.superseded` + `FoldStateStore.adoptRecordingOf` let the first render that can derive an occurrence key take over the fold recorded under the cold-cache positional key. `ObsidianHarness.openFile`'s index wait is reverted, so `e2e/foldable-embeds.e2e.ts` "fold state survives leaving the note and coming back" guards the boot window again (MEASURED red 2-of-6 before, green 8-of-8 after, takeover observed firing in 2-of-6).
+
+A third e2e case pins the per-link ordinal (`inserting an UNRELATED embed above a folded one keeps the fold`), verified to go RED when the key derivation is forced onto the positional fallback.
+
+Doc corrections: the false "strictly less lossy than the line key it replaces" claim is retracted; the z4jq inheritance is now described with its changed FREQUENCY; the nested-embed mechanism is marked UNMEASURED; CLAUDE.md is trimmed to a pointer at the module doc.
