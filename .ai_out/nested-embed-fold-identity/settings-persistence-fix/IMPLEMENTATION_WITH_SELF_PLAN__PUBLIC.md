@@ -1,125 +1,158 @@
 # IMPLEMENTATION (self-plan) — nested-embed fold identity
 
-Ticket: `nid_zqaxj18jbxwnazzz8aeggz91u_e`. Branch `settings-persistence-fix`.
-Commits: `ce2e132` (failing specs) → `afc21eb` (fix) → `cc4d59a` (measured ordering + docs).
+Ticket `nid_zqaxj18jbxwnazzz8aeggz91u_e`. Branch `settings-persistence-fix`.
+Commits: `ce2e132` (failing specs) → `afc21eb` (fix) → `cc4d59a` (measured ordering + docs)
+→ **`7418749`** (review F1/F3/F4 + first F2 attempt) → **`21e1e75`** (F2, measured properly).
 
-## Plan (as executed)
+## What changed and WHY (original pass — unchanged, summary)
 
-1. e2e FIRST, watch it fail (two specs + fixtures in `e2e/foldable-embeds.e2e.ts`).
-2. Key-shape knowledge into `src/embedFoldKeys.ts` (`nestedIn`, `unseenHostKey`).
-3. New `src/embedFoldKeyRegistry.ts` — the host lookup.
-4. Wire it in `src/foldableEmbedsPostProcessor.ts`.
-5. MEASURE the ordering with a throwaway probe; revert the instrumentation.
-6. lint + build + full e2e + CLAUDE.md.
+- **`src/embedFoldKeys.ts`** — `nestedIn(host, own)` → `` `<hostKey>::in::<ownKey>` ``, plus
+  `unseenHostKey(src)` for a host the post-processor never saw. Key SHAPE lives here only.
+- **`src/embedFoldKeyRegistry.ts`** (new) — `WeakMap<embed span, KeySlot>`, registered
+  SYNCHRONOUSLY in `process()`, derived LAZILY and MEMOISED; `hostKeyOf` recurses through the
+  whole nesting chain. Ordering is structural (an embed BODY is post-processed only after the
+  section holding its host span was) and was MEASURED with a throwaway probe: zero misses in a
+  reading view.
+- **`src/foldableEmbedsPostProcessor.ts`** — registers each span, resolves the pending key.
+- Two e2e specs (sibling independence across a reopen; cross-note no-bleed), both reproduced
+  RED at `ce2e132` by the reviewer independently.
 
-## What changed and WHY
+---
 
-**`src/embedFoldKeys.ts`** (key SHAPE stays in one place — it is DOM-free by design):
-- `nestedIn(host, own)` → `` `<hostKey>::in::<ownKey>` ``. A nested embed states its occurrence
-  in the CHILD note, so `sourcePath`, `src`, section text and index are identical for every
-  occurrence of the same host — the host key is the only thing that tells them apart.
-  `superseded` is qualified by the host's `superseded ?? current`, because a colder earlier
-  render would have keyed BOTH levels weakly — so `adoptRecordingOf` still lands.
-- `unseenHostKey(src)` → `` `host::<src>` `` for a host the post-processor never saw.
-- Module doc: the "Nested embeds still share ONE key per host … UNMEASURED" limitation is
-  replaced by the measured mechanism and the new rule.
+# REVIEW ITERATION 1 — disposition of every finding
 
-**`src/embedFoldKeyRegistry.ts`** (new, 84 lines) — `WeakMap<embed span, KeySlot>`, the
-sibling of `WiredElements`:
-- `register(embed, derive)` runs SYNCHRONOUSLY in `process()` and returns a
-  `PendingEmbedFoldKey`; derivation is LAZY (so `getSectionInfo` is still called right before
-  it is needed) and MEMOISED (one element has one key while it lives, so a host and its nested
-  embeds can never disagree about the prefix).
-- `hostKeyOf` walks `embed.parentElement?.closest('.internal-embed')` and recurses, so an embed
-  three levels deep is qualified by the whole chain.
+## F1 — "Live Preview cross-note no longer shares" is FALSE — **ACCEPTED**
 
-**`src/foldableEmbedsPostProcessor.ts`** — `process()` registers each span and hands the pending
-key to `makeFoldable`, which now resolves it instead of deriving one itself (`sectionEl` /
-`indexWithinSection` moved into the closure, so `makeFoldable` lost two parameters).
+The reviewer disproved it with an LP probe, and re-reading the code confirms it: an unseen
+host's key is `host::<src>`, identical in every host note, and the nested own key is identical
+too. Corrected in three places, and the honest statement is now "in Live Preview nested embeds
+share ONE fold state across ALL hosts — same note and different notes alike; pre-existing,
+unchanged by this key":
 
-**`CLAUDE.md`** — the reading-mode key bullet now states host qualification; a new bullet
-documents the registry, the ordering guarantee and the Live Preview limitation.
+- `src/embedFoldKeys.ts` → `unseenHostKey` doc.
+- `src/embedFoldKeyRegistry.ts` → module doc (see F3).
+- `CLAUDE.md` → registry bullet.
 
-## The ORDERING decision + evidence
+Follow-up ticket filed as the reviewer asked: **`nid_jdpdpu7w0nfda3y4decz7f6xy_e`** — "Live
+Preview: nested embeds share ONE fold state across all hosts", with an acceptance criterion
+that names the two e2e cases. Referenced from both code sites and CLAUDE.md.
 
-**Decision: designed so ordering cannot matter, then measured it anyway.**
+No product code changed for F1: the behaviour is pre-existing and out of this ticket's scope
+(reading-mode identity). Only the lies were removed.
 
-The lookup deliberately does NOT depend on the host having been WIRED (title loaded →
-`makeFoldable`), which would be a race between two independent MutationObservers. It depends
-only on the host span having been SEEN by `process()`. That is structural: Obsidian
-post-processes an embed BODY only after it resolved the embed, which can only happen after the
-section holding the host span was itself post-processed. Registration is synchronous there.
+## F2 — the superseded branch is dead — **ACCEPTED, and the suggested fix was NOT sufficient**
 
-**MEASUREMENT** (throwaway probe `.tmp/probe/probe15.e2e.ts`, log `.tmp/probe/run15b.log`,
-against real Obsidian 1.12.7; instrumentation reverted afterwards — `git diff` clean):
+The finding is correct and the defect is real. The suggested 2-line fix is not, and I only
+found that out by MEASURING — which is the substance of this iteration.
 
-```
-READING MODE:
-  FEN_PROBE_HOST unseen in=[live-preview] src=[probe15-child] nested=[probe15-grandchild]
-  FEN_PROBE_HOST unseen in=[live-preview] src=[probe15-child] nested=[probe15-grandchild]
-  FEN_PROBE_HOST registered in=[reading-view] src=[probe15-child] nested=[probe15-grandchild] key=[probe15-twins.md::L2::probe15-child::#0]
-  FEN_PROBE_HOST registered in=[reading-view] src=[probe15-child] nested=[probe15-grandchild] key=[probe15-twins.md::L4::probe15-child::#0]
-```
+**Attempt 1** (commit `7418749`) was the reviewer's shape: one superseded key, each half
+falling back to its own current key.
 
-Reading view: **zero misses**. An earlier run of the same probe (`run15.log`, warm cache) shows
-the host keys as `…::occ::probe15-child::#0` / `#1` — so the two occurrences stay distinct on
-BOTH the occurrence path and the cold-cache fallback path (`::L2` vs `::L4`).
-
-The two `unseen` lines are `in=[live-preview]`: the hidden Live Preview editor of the same
-leaf, whose TOP-LEVEL embed spans CM6 builds and the post-processor never sees. That is the one
-degraded case, and it degrades to `host::<src>` — see limitations.
-
-Independently, both new e2e specs are themselves ordering probes: if a reading-mode host were
-ever unregistered, both twins would fall back to the identical `host::nested-child` prefix and
-the specs would go red exactly as they did before the fix.
-
-**WHY NOT `adoptRecordingOf` here**: nothing degrades on the reading-mode path, so there is
-nothing to take over. The existing cold-cache takeover still runs for the nested embed's own
-key, with the host prefix chosen so it survives a cold host (above). No cascade to descendants
-is needed: a descendant's key is composed from its host's key at derivation time, and both are
-re-derived on the next render.
-
-## Red-then-green evidence
-
-RED, before the fix (`.tmp/e2e-red.log`, `.tmp/e2e-red2.log`):
+**Attempt 1 was still RED.** A temporary probe (logging every derived key, since removed)
+against real Obsidian 1.12.7 shows why — the two halves of a nested key warm up
+INDEPENDENTLY:
 
 ```
-✘  12 › a NESTED embed folds independently of its twin in a sibling host, across a re-render (15.2s)
-    Error: expect(locator).not.toHaveClass(expected) failed
-    Locator: locator('.markdown-reading-view .internal-embed[src="nested-child"]').locator('.markdown-embed.fen-embed').nth(1)
-    Expected pattern: not /\bfen-folded\b/
-    Received string: "internal-embed markdown-embed inline-embed is-loaded fen-embed fen-folded"
+COLD render (host note hidden from getCache):
+  host   CUR=[cold-host.md::L2::cold-child::#0]  SUP=[]
+  nested CUR=[cold-host.md::L2::cold-child::#0::in::cold-child.md::occ::cold-grandchild::#0]
+                              ^^ WEAK host                          ^^^ STRONG own half
+WARM re-render:
+  nested CUR=[cold-host.md::occ::cold-child::#0::in::cold-child.md::occ::cold-grandchild::#0]
 ```
 
+The fold sits under `L2 … :: in :: … occ …`. The original code produced no superseded key at
+all; the reviewer's form produces `L2 … :: in :: … L2 …` — the both-weak combination, which
+nothing ever recorded under. Neither reclaims the recording.
+
+**The fix actually shipped** (commit `21e1e75`): `EmbedFoldKey.superseded: string | null`
+becomes `supersededKeys: readonly string[]`. `nestedIn` returns EVERY combination of the two
+levels' `[current, ...superseded]` keys minus `current`; the post-processor adopts from each in
+turn, and `FoldStateStore.adoptRecordingOf`'s existing "target already recorded → return" guard
+makes every attempt after the first a no-op. `keyFor` returns `[]` or `[positionalKey]`.
+`FoldStateStore` itself is UNCHANGED.
+
+Cost: one extra field type change and a 4-line `flatMap`. Depth-N nesting yields 2^N−1
+candidates, and N is 2–3 in practice.
+
+Also corrected while there: the module doc claimed `ctx.getSectionInfo` "answers null for an
+embed body" — measured above, it answers a real section for some embed bodies. The doc now
+says either derivation can happen and that the collision holds regardless (which is the point).
+
+### F2 evidence — deterministic RED/GREEN, all runs mine
+
+New spec `e2e/nested-fold-cold-start.e2e.ts` (own Obsidian instance) folds a nested embed while
+its host note is unindexed, then re-renders it warm and asserts the fold survived.
+
+**Why the cold window is INJECTED and not raced for — measured first.** My first version of
+this spec just opened a note right after launch. It passed **6/6 with the takeover reverted** —
+vacuous. A probe then showed why: `getCache` already answers for every fixture by the time the
+harness has a workspace and the plugin enabled (`cacheAtOpen=[WARM]` in 3/3 runs). So
+`ObsidianHarness.withUnindexedNote(path, body)` replaces exactly the ONE call the plugin makes
+(`app.metadataCache.getCache`, see `main.ts`) for exactly ONE path, and restores it in a
+`finally`. No product code knows it is under test. I judged this a legitimate fault injection
+rather than a hack, and said so on the method; the alternative was a spec that cannot fail.
+
+| Variant of `nestedIn` | Result |
+|---|---|
+| ORIGINAL (pre-review, `own.superseded === null ? null : …`) | **1 failed** — `Received string: "internal-embed markdown-embed inline-embed is-loaded fen-embed"` (no `fen-folded`) |
+| The REVIEW's suggested 2-line fix | **1 failed** — same output |
+| Shipped (`supersededKeys`, all combinations) | **1 passed** |
+
+Both reds were produced in a scratch worktree at `.worktree/f2-revert` with ONLY `nestedIn`
+altered; the worktree is removed and `git status` is clean.
+
+## F3 — a host-lookup MISS silently recreates the bug — **ACCEPTED (doc only)**
+
+`src/embedFoldKeyRegistry.ts` module doc now states plainly that the fallback is "NOT safe, it
+is only the least bad answer": a miss re-collides, and no `adoptRecordingOf` takeover can undo
+it (the keys are equal, not weaker/stronger). The per-element-counter alternative and its
+trade-off (never collides, but loses the fold on every DOM rebuild) is recorded, with the
+reason it was not taken. No behaviour change — I agree with the reviewer that shipping the
+measured-zero-miss fallback is right.
+
+## F4 — key slots outlive marks — **ACCEPTED (doc only)**
+
+`register`'s doc now says the slot deliberately outlives the mark, and WHY: re-deriving on
+rewire would let a host disagree with the children it already handed a prefix to.
+
+## Out-of-band: `.worktree/` broke `npm run lint`
+
+Creating the scratch worktree under `.worktree/` (the CLAUDE.md convention) made `npm run lint`
+fail with 15 parse errors — eslint linted the second repo copy. Added `.worktree` to
+`eslint.config.mts` `globalIgnores` and to `.gitignore`, alongside the existing `.tmp` /
+`.dev-vault` entries. Dev-environment hygiene, not product change.
+
+## Nothing REJECTED
+
+Every finding was accepted. F2's suggested IMPLEMENTATION was replaced by a measurement-driven
+one, which is a stronger form of agreement, not a rejection.
+
+## Verification — my own runs, this iteration
+
 ```
-✘  1 › folding a NESTED embed in one host note leaves it unfolded in ANOTHER host note (15.1s)
-    Received string: "internal-embed markdown-embed inline-embed is-loaded fen-embed fen-folded"
+npm run lint      exit 0    1 problem (0 errors, 1 warning)
+                            obsidianmd/settings-tab/prefer-setting-definitions
+                            src/settings/foldableEmbedsSettingTab.ts:12 — PRE-EXISTING
+npm run build     exit 0
+npm run test:e2e  exit 0    52 passed (9.3s)
 ```
 
-(The serial file stops after the first failure, so the cross-note spec was re-run alone under
-`-g` to observe its own red.) Both are the ticket's measured repro: the twin comes back folded
-only AFTER the re-render, and host B is folded on its first ever render.
+51 → 52 tests: the one addition is `e2e/nested-fold-cold-start.e2e.ts`. No existing spec or
+assertion was removed, weakened or reordered.
 
-GREEN, after the fix — full suite (`.tmp/e2e-final.log`):
+Logs: `.tmp/iter1-lint-final.log`, `.tmp/iter1-build-final.log`, `.tmp/iter1-e2e-final.log`;
+red runs in `.tmp/redA.log` (original) and `.tmp/redB.log` (review's suggestion);
+vacuity measurement in `.tmp/revert-run{1..6}.log` and `.tmp/probe-run{1..3}.log`.
 
-```
-lint exit=0        (1 pre-existing warning: obsidianmd/settings-tab/prefer-setting-definitions)
-build exit=0
-e2e  exit=0        51 passed (8.3s)
-```
+## Known limitations, restated honestly
 
-Every pre-existing spec still passes unchanged; no existing assertion was weakened.
+- **Live Preview nested embeds share ONE fold state across ALL hosts.** Pre-existing;
+  ticket `nid_jdpdpu7w0nfda3y4decz7f6xy_e`.
+- **A host-lookup miss re-collides** (reading mode never takes that path, MEASURED).
+- Reading-mode fold state remains SESSION-only — this ticket is identity, not persistence.
+- No unit-test framework exists in this repo; coverage is the real-Obsidian Playwright suite.
 
-## Deliberate scope-outs / known limitations (documented in code)
+## NOT done by design (owned by TOP_LEVEL_AGENT)
 
-- **Live Preview top-level hosts** stay `unseen` → `host::<src>`. Two Live Preview embeds of
-  the SAME note therefore still share the fold state of the embeds nested inside them. This is
-  no worse than before (they shared one key already) and it DOES fix the cross-note case there.
-  Fixing it properly needs an identity for a CM6 widget span, which is Live Preview's business.
-- **Consequence, accepted deliberately**: a nested embed in a reading view and the same one in
-  a Live Preview pane now key differently, so their folds no longer bleed into each other. That
-  bleed was the very collision this ticket removes, and top-level embeds have never shared fold
-  state across the two modes either.
-- **No unit-test framework introduced** (exploration confirmed there is none) — coverage is the
-  real-Obsidian Playwright suite, per the ticket's AC.
-- Reading-mode fold state remains SESSION-only; this ticket is identity, not persistence.
+`change_log` entry; closing the ticket.
