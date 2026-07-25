@@ -1,5 +1,7 @@
 import { MarkdownPostProcessorContext } from "obsidian";
 import { EmbedFoldDom } from "./embedFoldDom";
+import { EmbedFoldKeys } from "./embedFoldKeys";
+import type { EmbedOccurrence } from "./embedFoldKeys";
 import { FoldableEmbedMark } from "./foldableEmbedMark";
 import { FoldStateStore } from "./foldStateStore";
 import { foldedByDefault } from "./settings/foldableEmbedsSettings";
@@ -38,6 +40,7 @@ export class FoldableEmbedsPostProcessor {
 	constructor(
 		private readonly store: FoldStateStore,
 		private readonly readSettings: ReadSettings,
+		private readonly keys: EmbedFoldKeys,
 	) {}
 
 	/**
@@ -83,7 +86,7 @@ export class FoldableEmbedsPostProcessor {
 			return;
 		}
 		const hasFoldMarker = this.stripFoldMarker(embed);
-		const key = this.buildKey(embed, ctx, sectionEl, indexWithinSection);
+		const key = this.keys.keyFor(this.occurrenceOf(embed, ctx, sectionEl, indexWithinSection));
 		const folded = this.store.get(key) ?? foldedByDefault(this.readSettings(), hasFoldMarker);
 
 		const mark = new FoldableEmbedMark(embed, (unloaded) => this.forget(unloaded));
@@ -178,33 +181,23 @@ export class FoldableEmbedsPostProcessor {
 	}
 
 	/**
-	 * Stable per-session identity for one embed occurrence. Prefers the section's
-	 * source line (stable across re-renders); when section info is unavailable it
-	 * falls back to a content hash of the section (stable across re-renders and
-	 * section-distinguishing). The occurrence index within the section is ALWAYS
-	 * appended so multiple embeds of the SAME note in one section/line keep
-	 * independent fold state; `src` keeps different notes from colliding.
+	 * Gathers what identifies this embed occurrence, for {@link EmbedFoldKeys} to key it.
+	 * `getSectionInfo` is called HERE and not earlier: Obsidian documents it must be called
+	 * right before it is needed (an embed is wired asynchronously, after its title loads).
 	 */
-	private buildKey(
+	private occurrenceOf(
 		embed: HTMLElement,
 		ctx: MarkdownPostProcessorContext,
 		sectionEl: HTMLElement,
 		indexWithinSection: number,
-	): string {
-		const src = embed.getAttribute("src") ?? "";
-		const lineStart = ctx.getSectionInfo(sectionEl)?.lineStart;
-		const locator = lineStart !== undefined ? `L${lineStart}` : `S${this.sectionHash(sectionEl)}`;
-		return `${ctx.sourcePath}::${locator}::${src}::#${indexWithinSection}`;
-	}
-
-	/** djb2 hash of the section's rendered text — a stable section discriminator for the rare null-section fallback. */
-	private sectionHash(sectionEl: HTMLElement): number {
-		const text = sectionEl.textContent ?? "";
-		let hash = 5381;
-		for (let i = 0; i < text.length; i++) {
-			hash = (hash * 33) ^ text.charCodeAt(i);
-		}
-		return hash >>> 0;
+	): EmbedOccurrence {
+		return {
+			sourcePath: ctx.sourcePath,
+			section: ctx.getSectionInfo(sectionEl),
+			indexWithinSection,
+			src: embed.getAttribute("src") ?? "",
+			renderedSectionText: sectionEl.textContent ?? "",
+		};
 	}
 
 	private whenMarkdownEmbedReady(embed: HTMLElement, onReady: OnTitleReady): void {

@@ -3,7 +3,7 @@ id: nid_7qbtubxk89team9oadnl3hanr_e
 title: "Reading mode: line-based fold key is not mapped across edits — the fold is lost, or lands on a DIFFERENT embed"
 status: in_progress
 deps: []
-links: [nid_zqaxj18jbxwnazzz8aeggz91u_e]
+links: [nid_zqaxj18jbxwnazzz8aeggz91u_e, nid_zf4num1ja4c9tpwpgj672ijgn_e]
 created_iso: 2026-07-25T00:44:48Z
 status_updated_iso: 2026-07-25T06:11:15Z
 type: bug
@@ -34,3 +34,9 @@ Key the OCCURRENCE rather than the line — e.g. `sourcePath::src::#nthOccurrenc
 - e2e coverage for "fold, then edit above, then re-render" — currently absent from the suite.
 - lint, build and full e2e green.
 
+
+## Notes
+
+**2026-07-25T06:28:48Z**
+
+Implemented the occurrence key (src/embedFoldKeys.ts + ReadEmbeds port from src/main.ts); e2e/reading-mode-fold-key.e2e.ts covers both measured scenarios and was failing-first. Cold-metadata-cache window at app launch filed separately as nid_zf4num1ja4c9tpwpgj672ijgn_e.
