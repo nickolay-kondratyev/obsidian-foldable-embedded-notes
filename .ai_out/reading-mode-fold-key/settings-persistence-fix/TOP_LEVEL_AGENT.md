@@ -19,8 +19,13 @@ Flow: EXPLORE → IMPLEMENTATION_WITH_SELF_PLAN → IMPLEMENTATION_REVIEW → IM
 ## Log
 
 - [x] Ticket set in_progress.
-- [x] EXPLORATION_SRC + EXPLORATION_E2E spawned (background).
-- [ ] IMPLEMENTATION_WITH_SELF_PLAN
+- [x] EXPLORATION_SRC + EXPLORATION_E2E done. NOTE: the `Explore` agent type is READ-ONLY —
+      it cannot write its own PUBLIC file; TOP_LEVEL_AGENT persisted both results verbatim
+      (`EXPLORATION_SRC_PUBLIC.md`, `EXPLORATION_E2E_PUBLIC.md`).
+      Headlines carried forward: no `app` reference in the post-processor today (needs a narrow
+      injected port); no unit-test runner exists (e2e is the only vehicle); an occurrence-ordinal
+      key does NOT by itself fix `nid_z4jq…` (deleting an earlier same-`src` embed).
+- [ ] IMPLEMENTATION_WITH_SELF_PLAN (spawned)
 - [ ] IMPLEMENTATION_REVIEW
 - [ ] IMPLEMENTATION_ITERATION
 - [ ] change_log entry (TOP_LEVEL only, one entry for the whole flow) + ticket close
