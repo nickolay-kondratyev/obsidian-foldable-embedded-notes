@@ -1,11 +1,11 @@
 ---
 id: nid_7qbtubxk89team9oadnl3hanr_e
 title: "Reading mode: line-based fold key is not mapped across edits — the fold is lost, or lands on a DIFFERENT embed"
-status: open
+status: in_progress
 deps: []
 links: [nid_zqaxj18jbxwnazzz8aeggz91u_e]
 created_iso: 2026-07-25T00:44:48Z
-status_updated_iso: 2026-07-25T00:44:48Z
+status_updated_iso: 2026-07-25T06:11:15Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
