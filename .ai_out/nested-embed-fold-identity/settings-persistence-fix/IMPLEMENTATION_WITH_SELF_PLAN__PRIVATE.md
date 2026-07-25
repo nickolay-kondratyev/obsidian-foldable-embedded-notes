@@ -40,6 +40,64 @@ there is nothing to take over. `adoptRecordingOf` still runs for the nested embe
 cold-cache window; the host prefix used for `superseded` is the host's own `superseded ?? current`,
 so a takeover across a cold host still lands.
 
-## Status
+## Status: DONE
 
-(kept up to date as work proceeds — see PUBLIC.md for the final story)
+All six steps executed. lint 0 (1 pre-existing warning), build 0, e2e 51/51.
+Commits: `ce2e132` failing specs, `afc21eb` fix, `cc4d59a` measured ordering + CLAUDE.md.
+NOT done by design (owned by TOP_LEVEL_AGENT): `change_log` entry, closing the ticket.
+
+## Files touched
+
+- `e2e/foldable-embeds.e2e.ts` — 5 fixtures (`nested-grandchild.md`, `nested-child.md`,
+  `nested-twins.md`, `nested-host-a.md`, `nested-host-b.md`), `nestedEmbeds()` /
+  `waitForNestedEmbedsWired()` / `openWithNestedEmbeds()` helpers, 2 tests placed BEFORE the
+  plugin-disable test (which must stay last in the serial file).
+- `src/embedFoldKeys.ts` — `nestedIn`, `unseenHostKey`, private `qualify`, 2 new constants
+  (`NESTING_SEPARATOR = "in"`, `UNSEEN_HOST_LOCATOR = "host"`), module doc rewritten.
+- `src/embedFoldKeyRegistry.ts` — NEW.
+- `src/foldableEmbedsPostProcessor.ts` — registry field + constructor body, `process()`
+  registers, `makeFoldable(embed, title, ctx, pendingKey)`.
+- `CLAUDE.md` — key bullet + new registry bullet.
+
+## How to reproduce the runs
+
+```bash
+export OBSIDIAN_PATH=$(bash scripts/setup-obsidian-bin.sh)   # /home/node/.cache/obsidian-e2e/obsidian-1.12.7/obsidian
+npm run test:e2e -- e2e/foldable-embeds.e2e.ts
+npm run test:e2e                                             # full suite
+```
+
+Probe (needs the headless flags run-e2e.sh normally injects):
+
+```bash
+export OBSIDIAN_E2E_EXTRA_ARGS="--ozone-platform=headless --disable-gpu"
+npm run setup:dev-vault                                      # rebuild the instrumented plugin
+npx playwright test --config .tmp/probe/pw.config.ts .tmp/probe/probe15.e2e.ts
+```
+
+`.tmp/probe/probe15.e2e.ts` is kept (gitignored). It only prints; re-instrument
+`EmbedFoldKeyRegistry.hostKeyOf` with a `console.info` before re-running it.
+
+## Traps hit (worth knowing)
+
+- The serial suite SKIPS the rest of the file after a failure, so the second red had to be
+  observed with `-g "ANOTHER host note"`.
+- A probe run outside `scripts/run-e2e.sh` dies with a dbus error unless
+  `OBSIDIAN_E2E_EXTRA_ARGS` carries the headless flags.
+- A first probe version logged `unseen` twice in "reading mode" and looked like a real ordering
+  miss; adding the CONTAINER to the log showed both came from the hidden Live Preview editor in
+  the same leaf. Never conclude from a host `src` alone — always log where the node lives.
+- `expectFolded(x, false)` retries until it passes, so it is green merely for being EARLY.
+  Every new assertion of that shape is gated behind `waitForNestedEmbedsWired`, whose chevron
+  check is the settled barrier (same trick as `reading-mode-fold-key.e2e.ts`).
+
+## Ideas deliberately NOT taken
+
+- Eager key derivation inside `process()` — simpler, but it moves `getSectionInfo` earlier and
+  would make more embeds take the cold-cache fallback at app start. Lazy + memoised keeps the
+  existing timing.
+- A per-ELEMENT synthetic id for unseen (Live Preview) hosts — would make LP nested embeds fold
+  independently, but their fold would no longer survive a rebuild of that DOM. `host::<src>` is
+  a strict improvement over today with no regression; the synthetic id is a trade.
+- Reusing `adoptRecordingOf` to take over a "host not yet known" key — no such window exists
+  once registration is synchronous, so it would be dead machinery.
