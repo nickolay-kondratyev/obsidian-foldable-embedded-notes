@@ -1,11 +1,12 @@
 ---
+closed_iso: 2026-07-25T07:08:21Z
 id: nid_7qbtubxk89team9oadnl3hanr_e
 title: "Reading mode: line-based fold key is not mapped across edits — the fold is lost, or lands on a DIFFERENT embed"
-status: in_progress
+status: closed
 deps: []
 links: [nid_zqaxj18jbxwnazzz8aeggz91u_e, nid_zf4num1ja4c9tpwpgj672ijgn_e]
 created_iso: 2026-07-25T00:44:48Z
-status_updated_iso: 2026-07-25T06:11:15Z
+status_updated_iso: 2026-07-25T07:08:21Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
@@ -50,3 +51,7 @@ BLOCKING B1 (the cold-cache window was a REGRESSION against the line key, not ju
 A third e2e case pins the per-link ordinal (`inserting an UNRELATED embed above a folded one keeps the fold`), verified to go RED when the key derivation is forced onto the positional fallback.
 
 Doc corrections: the false "strictly less lossy than the line key it replaces" claim is retracted; the z4jq inheritance is now described with its changed FREQUENCY; the nested-embed mechanism is marked UNMEASURED; CLAUDE.md is trimmed to a pointer at the module doc.
+
+**2026-07-25T07:08:21Z**
+
+Fixed: reading-mode fold state is keyed by OCCURRENCE (sourcePath::occ::<link>::#<ordinal>, src/embedFoldKeys.ts) derived from app.metadataCache via a narrow injected ReadEmbeds port; the cache entry is located by position, so the src<->link join is off the correctness path. A cold vault index (first render after launch) is handled by a superseded-key handoff (FoldStateStore.adoptRecordingOf) rather than a wait/retry, so the boot window is not regressed vs the old cache-independent line key. e2e: e2e/reading-mode-fold-key.e2e.ts (failing-first); revert of the handoff proved red 4-of-8 runs. Lint/build clean, full e2e 49 passed over repeated runs. Change log: dj7trad66j688g871sge5vflw. Still open by design: nid_z4jq8me8mhstojozeua8fufdr_e (ordinal is still inherited when an earlier same-src embed is deleted) and nid_zqaxj18jbxwnazzz8aeggz91u_e (nested embeds share one key).

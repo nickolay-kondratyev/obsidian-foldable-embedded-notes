@@ -25,7 +25,20 @@ Flow: EXPLORE → IMPLEMENTATION_WITH_SELF_PLAN → IMPLEMENTATION_REVIEW → IM
       Headlines carried forward: no `app` reference in the post-processor today (needs a narrow
       injected port); no unit-test runner exists (e2e is the only vehicle); an occurrence-ordinal
       key does NOT by itself fix `nid_z4jq…` (deleting an earlier same-`src` embed).
-- [ ] IMPLEMENTATION_WITH_SELF_PLAN (spawned)
-- [ ] IMPLEMENTATION_REVIEW
-- [ ] IMPLEMENTATION_ITERATION
-- [ ] change_log entry (TOP_LEVEL only, one entry for the whole flow) + ticket close
+- [x] IMPLEMENTATION_WITH_SELF_PLAN — occurrence key behind a narrow `ReadEmbeds` port,
+      failing-first e2e (`e2e/reading-mode-fold-key.e2e.ts`).
+- [x] IMPLEMENTATION_REVIEW — 1 BLOCKING (cold vault index = a REGRESSION vs the cache-independent
+      line key, papered over in the harness) + 5 SHOULD-FIX + 4 NIT.
+- [x] IMPLEMENTATION_ITERATION (1 round) — blocking issue fixed IN THE PRODUCT via a superseded-key
+      handoff (`EmbedFoldKey.superseded` + `FoldStateStore.adoptRecordingOf`), harness wait reverted,
+      10/10 findings incorporated. Verification pass: READY, 0 blocking; revert of the handoff proved
+      the guarding test red 4-of-8 runs. Lint/build clean, full e2e 49 passed over repeated runs.
+- [x] change_log `dj7trad66j688g871sge5vflw`; ticket `nid_7qbtubxk89team9oadnl3hanr_e` CLOSED.
+
+## Left open deliberately
+
+- `nid_zf4num1ja4c9tpwpgj672ijgn_e` (cold-index fold loss) — acceptance criterion is MET by the
+  handoff and verified; the implementer left it open for the human to confirm the close.
+- `nid_z4jq8me8mhstojozeua8fufdr_e` (deleting an earlier same-`src` embed still shifts the ordinal)
+  and `nid_zqaxj18jbxwnazzz8aeggz91u_e` (nested embeds share one key) — out of scope by design; the
+  new key shape composes with both.
