@@ -1,11 +1,11 @@
 ---
 id: nid_7ge9y22j5luopjsposmfoi718_e
 title: "Reading mode: a dash glued to inline markup (`![[x]]-**bold**`) wrongly arms the fold marker"
-status: open
+status: in_progress
 deps: []
 links: []
 created_iso: 2026-07-25T00:44:50Z
-status_updated_iso: 2026-07-25T00:44:50Z
+status_updated_iso: 2026-07-25T05:49:13Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
