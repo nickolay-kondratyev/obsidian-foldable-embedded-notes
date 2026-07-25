@@ -78,13 +78,24 @@ those genuinely differ per mode.
     re-runs the post-processor over it. A nested embed becomes foldable again only once the
     note is REOPENED. Consistent with "a change lands on the NEXT render", but unlike Live
     Preview's top-level embeds, which `registerEditorExtension` rebuilds immediately.
+- `src/pendingEmbedObserver.ts` — the reading-mode WAIT for one embed to finish loading, as a
+  `MarkdownRenderChild` over the SAME contract: the MutationObserver dies with the embed span
+  it observes, so an embed that never resolves (`![[missing]]`) can no longer leave an
+  observer per render behind (ticket nid_78cl6bo3t8umqbndughsbjez9_e; MEASURED 2 → 4 → 6).
+  Plugin disable is the same asymmetry as a mark's — MEASURED: it unloads a reading-view
+  observer but NOT one on a nested embed inside a Live Preview widget, hence `teardown()`.
 - `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note
   embeds load async, so it waits (MutationObserver, or sync when ready) for
   `.markdown-embed` + title, then: strict `-` marker parse/strip on the embed span's next
   text-node sibling, the `EmbedFoldKeys` identity, initial fold state (session store wins over
   the `foldedByDefault` default), and DOM wiring via `EmbedFoldDom` under one
-  `FoldableEmbedMark`. `teardown()` (called from `onunload`) stops the observers and unloads
-  every live mark.
+  `FoldableEmbedMark`. `teardown()` (called from `onunload`) unloads every live observer and
+  every live mark — for the SAME reason, see `PendingEmbedObserver`.
+  - The wait ENDS when Obsidian settles the embed as a non-note one (`NON_NOTE_EMBED_CLASSES`,
+    which includes `file-embed` — any other file type, and `mod-empty`, a target that does not
+    exist). MEASURED: an embed's classes are assigned in ONE shot, bare `internal-embed` at
+    post-process time, so `file-embed` never shows up transiently on something that later
+    resolves to a note.
   - The marker arms only when the dash is followed by whitespace or a real END OF LINE —
     nothing after it in its PARENT element, or a `<br>`. NOT merely the end of that text
     node, or `![[x]]-**bold**` (markup renders as a sibling element) would swallow a dash

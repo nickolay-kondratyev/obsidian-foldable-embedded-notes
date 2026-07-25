@@ -31,9 +31,10 @@ const OBSERVED_MUTATIONS: MutationObserverInit = {
  * observer dies with the embed span it observes — for ANY reason an embed never resolves,
  * not just the classes we happen to know about.
  *
- * That trigger does NOT cover plugin unload (Obsidian leaves its DOM where it is), which is
- * why the owner's `teardown` also unloads every live observer itself — same asymmetry as
- * `FoldableEmbedMark`.
+ * That trigger does NOT cover plugin unload wherever Obsidian leaves its DOM in place, which
+ * is why the owner's `teardown` also unloads every live observer itself — MEASURED with that
+ * loop removed: disabling the plugin unloads a READING-VIEW observer (Obsidian discards that
+ * DOM), but one on a nested embed inside a LIVE PREVIEW widget kept observing.
  */
 export class PendingEmbedObserver extends MarkdownRenderChild {
 	private readonly observer: MutationObserver;

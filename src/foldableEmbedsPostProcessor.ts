@@ -77,10 +77,11 @@ export class FoldableEmbedsPostProcessor {
 	/**
 	 * Undoes everything this instance did to the DOM, for plugin unload.
 	 *
-	 * Both halves are needed: still-live observers (an embed whose note is still loading)
-	 * must stop, and every mark must come off — Obsidian discards a reading view wholesale
-	 * on unload, but an embed BODY inside a Live Preview widget is DOM Obsidian keeps, and
-	 * only a REMOVED container unloads a render child.
+	 * Both halves are needed, for the SAME reason: only a REMOVED container unloads a render
+	 * child, and Obsidian discards a reading view wholesale on unload but KEEPS an embed BODY
+	 * inside a Live Preview widget. MEASURED on 1.12.7 with this loop removed: a reading-view
+	 * observer is unloaded by the disable anyway, one on a nested embed inside a Live Preview
+	 * widget is NOT — it kept observing (same asymmetry the marks below have).
 	 */
 	teardown(): void {
 		// Copied for the same reason as the marks below: each unload calls back into
