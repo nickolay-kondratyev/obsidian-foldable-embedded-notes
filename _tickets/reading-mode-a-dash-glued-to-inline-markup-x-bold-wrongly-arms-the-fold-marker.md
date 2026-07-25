@@ -1,11 +1,12 @@
 ---
+closed_iso: 2026-07-25T06:09:29Z
 id: nid_7ge9y22j5luopjsposmfoi718_e
 title: "Reading mode: a dash glued to inline markup (`![[x]]-**bold**`) wrongly arms the fold marker"
-status: in_progress
+status: closed
 deps: []
-links: []
+links: [nid_3axo1iklky5s5n9us7947nr4i_e, nid_sos38zx0quvy2ec2j5seqsh7e_e]
 created_iso: 2026-07-25T00:44:50Z
-status_updated_iso: 2026-07-25T05:49:13Z
+status_updated_iso: 2026-07-25T06:09:29Z
 type: bug
 priority: 1
 assignee: CC_WITH-nickolaykondratyev
@@ -33,3 +34,15 @@ Require the marker to be at a real end-of-line, not merely end-of-text-node: kee
 - `![[x]]-` (alone, and followed by whitespace/text) still folds by default with the dash stripped.
 - e2e coverage in `e2e/foldable-embeds.e2e.ts` alongside the existing `![[child]]-x` negative case; lint, build and full e2e green.
 
+
+## Notes
+
+**2026-07-25T06:09:29Z**
+
+RESOLVED in commits 39501ab + af1d63c.
+
+`stripFoldMarker` now arms the marker only when the dash is followed by whitespace or a REAL end of line (new private `isEndOfLine`: `nextSibling === null || nextSibling.instanceOf(HTMLBRElement)`, cross-window safe via obsidian`s `Node.instanceOf`). Structural, no lookbehind, so mobile/iOS Safari stays supported.
+
+e2e in `e2e/foldable-embeds.e2e.ts`: `![[child]]-**bold**` (literal dash, unfolded), `![[child]]- tail` (whitespace branch) and a `marker-soft-break.md` fixture for the `<br>` branch, mutation-proved to be coupled to it. lint/build/full e2e green (46 passed), verified independently by the reviewer.
+
+KNOWN LIMITATION recorded, split into nid_3axo1iklky5s5n9us7947nr4i_e: `**![[x]]-** tail` (embed wrapped in inline markup) still loses its dash. Cross-mode divergence for `![[x]]- tail` tracked in nid_sos38zx0quvy2ec2j5seqsh7e_e.

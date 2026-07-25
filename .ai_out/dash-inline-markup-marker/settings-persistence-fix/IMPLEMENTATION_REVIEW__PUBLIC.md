@@ -110,3 +110,82 @@ Worth a follow-up ticket to decide which mode is right rather than letting it ca
 
 Only N-1's wording. CLAUDE.md's reading-mode bullet is otherwise accurate and appropriately
 succinct; no other doc drift found.
+
+---
+
+# ROUND 2 — convergence check (`af1d63c`)
+
+Verdict: **READY TO SHIP. No blocking items. Both SHOULD-FIX items correctly resolved;
+all rejections/wording-only responses are acceptable.**
+
+## Verification I ran MYSELF this round (real exits, not reported claims)
+
+| Command | Result |
+|---|---|
+| `npm run lint` | **EXIT=0** — 0 errors, **1 warning**, the pre-existing `foldableEmbedsSettingTab.ts` `prefer-setting-definitions`. The `prefer-instanceof` warning this change had introduced is **GONE**. (`.tmp/r2-lint.log`) |
+| `npm run build` | **EXIT=0** — note this script is `tsc -noEmit -skipLibCheck && esbuild`, so the `Node.instanceOf` augmentation type-checks. (`.tmp/r2-build.log`) |
+| `npm run test:e2e` (FULL) | **EXIT=0** — **46 passed** in 7.0s. (`.tmp/r2-e2e-full.log`) |
+| `<br>`-branch coupling proof (mine, independent) | scratch worktree at `af1d63c`, `isEndOfLine` reduced to `return next === null;` → `npm run test:e2e -- e2e/foldable-embeds.e2e.ts` **EXIT=1**, `1 failed, 8 passed`; the single failure is `` `![[child]]-` before a SOFT line break still folds `` (`toHaveClass` — embed NOT folded). (`.tmp/r2-e2e-mutated.log`) |
+| N-2 independence proof (mine) | `-g "tail. still folds"` in isolation → **EXIT=0**, `1 passed`. The `- tail` test genuinely no longer inherits the previous test's navigation. (`.tmp/r2-e2e-isolated.log`) |
+
+Worktree removed; `git worktree list` shows only the main checkout and `git status` is clean.
+No `sanity_check.sh` exists in this repo.
+
+Every number in the implementer's `IMPLEMENTATION_ITERATION__PUBLIC.md` reproduced exactly.
+The report remains **honest**.
+
+## SF-1 — resolved, and now RUNTIME-verified
+
+`src/foldableEmbedsPostProcessor.ts:177` is now
+`return next === null || next.instanceOf(HTMLBRElement);`. Two things I checked beyond the
+lint delta:
+- It type-checks (`tsc` runs inside `npm run build`; obsidian's `Node.instanceOf` is
+  `obsidian.d.ts:62`).
+- It is exercised at RUNTIME, not just compiled: the new soft-break test is the only test
+  that reaches this clause, and my mutation shows it fails without it. So `instanceOf`
+  really does recognise a real Obsidian-rendered `<br>` — the cross-window rewrite did not
+  silently break the same-realm case, which was the one risk of taking SF-1.
+- The WHY is documented at the call site (cross-window/popout realm), which is exactly the
+  kind of non-obvious-API comment CLAUDE.md asks for.
+
+## SF-2 — resolved, and the coverage is REAL
+
+`marker-soft-break.md` (`![[child]]-\nnext line`) plus a test asserting folded + dash
+stripped (`nextSiblingText === ""`) + `following-sibling::br[1]` attached. This pins the DOM
+shape, matching the discipline of the adjacent negative test, and my own mutation run —
+not the implementer's — proves the test is coupled to the branch it claims to guard.
+
+## Judging the rejections / wording-only responses
+
+| Item | My round-2 assessment |
+|---|---|
+| **N-3 REJECTED** (reading mode folds `![[x]]- tail`, Live Preview does not) | **Acceptable, not blocking.** This is a pre-existing product decision; changing either mode would alter user-visible behaviour without human alignment, which is precisely what the implementer should NOT do unilaterally. Handing it up as a follow-up ticket candidate is the right call. |
+| **N-1 wording-only** (the `**![[x]]-** tail` hole left open) | **Acceptable.** I asked for honest wording OR a fix; the implementer chose wording plus an explicit `KNOWN LIMITATION` in both `isEndOfLine`'s doc and CLAUDE.md. The doc now says "nothing follows it in its PARENT element" and "only SIBLINGS are inspected", which matches the code exactly — no overclaim remains. Chasing it needs an ancestor walk for a rare shape; 80/20 agrees. |
+| **N-2** | Incorporated and independently proven above. |
+
+No rejection hides a defect, and nothing was weakened, skipped, or removed: the diff is
+additive on `e2e/`, one token changed in `src/`, docs expanded. No test or anchor point
+removed. Test count 45 → 46.
+
+## Acceptance criteria (re-checked against the ticket)
+
+- AC1 `![[x]]-**bold**` literal + unfolded — **met** (failing-before proven in round 1).
+- AC2 `![[x]]-` alone / followed by whitespace still folds, dash stripped — **met**, now
+  with the `<br>` end-of-line shape pinned too.
+- AC3 e2e alongside the existing negative case; lint, build, full e2e green — **met**, and
+  this round lint is green with **no new warning at all**.
+
+## Remaining suggestions (NON-blocking, do not hold the ship)
+
+- **N-4 (new, cosmetic).** The CLAUDE.md reading-mode bullet now carries two em-dash
+  interruptions before it resumes with "initial fold state", so the reader has to
+  re-connect that clause back to "then:" across two intervening sentences. Correct, just
+  dense. If it is touched again, split the limitation into its own sub-bullet.
+- Follow-up tickets worth creating (all pre-existing, none gating this change): the
+  cross-mode `![[x]]- tail` contract (N-3), the wrapped-embed `**![[x]]-** tail` dash loss
+  (N-1), and a dedicated e2e for `` ![[x]]-`code` `` (currently only the `<strong>` shape
+  is pinned by a test).
+
+## Documentation Updates Needed
+
+None. N-1's overclaim is fixed; CLAUDE.md and the source docs now match the code.
