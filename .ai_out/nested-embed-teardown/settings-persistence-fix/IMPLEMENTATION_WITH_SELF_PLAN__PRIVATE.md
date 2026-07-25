@@ -47,6 +47,31 @@ main, livePreviewFoldExtension, embedFoldDom (docs), CLAUDE.md, LP e2e spec.
 - Ticket part 3 (LP `destroy()` sweeping nested embeds) intentionally NOT done — see
   PUBLIC.md for the redundancy + live-listener-orphaning argument.
 
+## Iteration 1 (post-review) — DONE, comment/doc/ticket only, NOT committed
+
+Review verdict was SHIP WITH FIXES; no code-correctness blocker. Both MUST-FIX done.
+Lint PASS, build PASS (`.tmp/iter1-lint.log`, `.tmp/iter1-build.log`). e2e deliberately NOT
+re-run — nothing executable changed (`git diff` = CLAUDE.md + 2 doc comments + 2 ticket files).
+
+### Ground truth from `node_modules/obsidian/obsidian.d.ts` — do not re-guess
+- `Component.addChild`: "Adds a child component, **loading** it if this component is loaded".
+  It NEVER unloads. The old comment claiming otherwise was wrong and is deleted.
+- `MarkdownPostProcessorContext.addChild`: "if the **containerEl** of the child is ever removed,
+  the component's unload will be called". THAT is the boundedness mechanism; `containerEl` is
+  the embed span. Plugin disable removes nothing → does not fire → `teardown()` is required.
+
+### Tickets filed this iteration (do not re-file)
+- `nid_o44oqs41s0z21xttblyk513v7_e` — adopt already-rendered embeds on load (the AC3 caveat).
+- `nid_5w4yyxmghxg4zteq5xjmdrxd9_e` — scope `EmbedFoldDom.unmark`'s chevron query.
+- `nid_afu1pcd19esc3v9i2xckicrtq_e` — cross-mode double-wiring net (latent, unmeasured).
+- `nid_9bvqz2a3rzved4u2pci21tyfr_e` — disable racing `onload`'s await (pre-existing).
+- `nid_856xzuo22pkposozpsvbkd8x5_e` — e2e count-0 assertions can fail at the wrong line.
+Notes added to `nid_1ngosntduq5baizn9b7056h34_e` (AC3 caveat + part-3 rationale) and to the
+closed `nid_tto6kyjdm8dsi86mvvnqey2sh_e` (cross-reference).
+
+Rejected: review OPTIONAL #5 (merge `liveMarks`+`wiredEmbeds` — would force a strong-retaining
+Map for a two-line saving) and #7 (unobserved "watch" item, no action possible).
+
 ### Gotchas encoded in the code
 - `mark.load()` is explicit: an unloaded Component ignores `unload()`.
 - `ctx.addChild(mark)` is the LAST statement of `makeFoldable` for the same reason.

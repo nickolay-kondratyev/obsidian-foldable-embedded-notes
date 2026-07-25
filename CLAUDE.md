@@ -42,10 +42,17 @@ those genuinely differ per mode.
   predecessor marked.
 - `src/foldableEmbedMark.ts` — one reading-mode embed's injected state and its exact
   inverse, as a `MarkdownRenderChild` (`ctx.addChild`) owning an `AbortController` for the
-  title listener. MEASURED on 1.12.7: `ctx.addChild` does NOT fire on plugin disable, so
-  the post-processor also unloads every live mark itself — needed because embed BODIES
+  title listener. Its unload trigger is the DOM: `MarkdownPostProcessorContext.addChild`
+  unloads a child once its `containerEl` (here the embed span) is removed — so a re-render
+  reclaims marks, but a plugin disable does NOT (it removes nothing; MEASURED on 1.12.7).
+  Hence the post-processor also unloads every live mark itself — needed because embed BODIES
   inside Live Preview widgets are Obsidian's REUSED DOM, unlike a reading view (discarded
   wholesale on toggle).
+  - KNOWN LIMITATION, measured: re-enabling the plugin does not rewire embeds already on
+    screen, because a preview↔source round trip REUSES a rendered embed body and never
+    re-runs the post-processor over it. A nested embed becomes foldable again only once the
+    note is REOPENED. Consistent with "a change lands on the NEXT render", but unlike Live
+    Preview's top-level embeds, which `registerEditorExtension` rebuilds immediately.
 - `src/foldableEmbedsPostProcessor.ts` — READING mode, per-section post-processor. Note
   embeds load async, so it waits (MutationObserver, or sync when ready) for
   `.markdown-embed` + title, then: strict `-` marker parse/strip on the embed span's next

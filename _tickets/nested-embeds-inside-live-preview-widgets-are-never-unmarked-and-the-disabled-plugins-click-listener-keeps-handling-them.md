@@ -47,3 +47,26 @@ Three parts, all small:
 **2026-07-25T03:35:41Z**
 
 MEASURED (Obsidian 1.12.7) while evaluating whether Live Preview could simply be deleted: with src/main.ts:30 (registerEditorExtension) commented out, the editor is NOT left untouched. In Live Preview the top-level embed gets nothing (fen-embed=false, 0 chevrons, title click is Obsidian's own behaviour) while the NESTED embed still gets fen-embed + a chevron and its title click still folds it — 1 of 2 embeds wired. The session FoldStateStore is also shared: a fold applied through the editor's widget DOM was still in effect when the note was reopened in reading mode. Consequences: (1) removing the LP extension degrades the feature into an inconsistent half-feature in Obsidian's DEFAULT editing mode rather than turning it off, and would additionally require scoping the post-processor out of editor DOM; (2) it reinforces this ticket — the post-processor genuinely needs its own teardown, because destroy() can never own those nested marks.
+
+**2026-07-25T05:45:16Z**
+
+REVIEW OUTCOME (review of 622a483: SHIP WITH FIXES).
+
+1. Part 3 (`LivePreviewFoldView.destroy()` should unmark ALL embeds, nested included) is
+   deliberately NOT implemented, and the reviewer accepted the rejection. WHY, so it is not
+   "re-fixed" later: (a) redundant — an embed carries this instance's marks iff a live
+   `FoldableEmbedMark` sits in the post-processor registry, and `teardown()` unloads them all;
+   (b) actively harmful — `destroy()` also runs while the plugin is ALIVE (view recreation),
+   and unmarking a nested embed there strips `fen-embed`/chevron out from under a still-live
+   post-processor listener, leaving an embed that looks unfoldable but still toggles
+   `fen-folded` (styles.css collapses on `.fen-folded > .markdown-embed-content` without
+   requiring `.fen-embed`). Live Preview must not undo marks it did not make.
+
+2. KNOWN LIMITATION on acceptance criterion 3 ("nested embed foldable again after re-enable"),
+   MEASURED on Obsidian 1.12.7: it holds only after the note is REOPENED. A preview<->source
+   round trip REUSES an already-rendered embed body, so the re-enabled plugin's post-processor
+   is never invoked over it. Since a plugin UPDATE is a disable+enable, after an update a
+   user's open notes have nested embeds that are silently not foldable until reopened.
+   Live Preview top-level embeds do not have this (registerEditorExtension rebuilds open
+   editors), so the inconsistency is user-visible. Follow-up filed: "adopt already-rendered
+   embeds on plugin load". Human should confirm this ship-state for AC3 before closing.

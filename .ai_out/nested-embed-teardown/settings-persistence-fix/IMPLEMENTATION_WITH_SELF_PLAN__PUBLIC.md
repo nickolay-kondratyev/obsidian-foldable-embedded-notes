@@ -78,6 +78,64 @@ expected 0, received 1 (`.tmp/e2e-fail-first.log`).
   on the NEXT render — but it means "re-enable the plugin" alone does not restore folding
   for embeds already on screen.
 
+## Iteration 1 — response to `IMPLEMENTATION_REVIEW__PUBLIC.md` (verdict: SHIP WITH FIXES)
+
+Changes in this iteration are **comment/doc/ticket only** — `git diff` touches `CLAUDE.md`,
+two doc comments in `src/`, and two ticket files. **The e2e suite was NOT re-run**, deliberately:
+nothing executable changed. Lint PASS (exit 0, the one pre-existing ticketed
+`prefer-setting-definitions` warning), build PASS (exit 0) — `.tmp/iter1-lint.log`, `.tmp/iter1-build.log`.
+
+### MUST-FIX — both ACCEPTED
+
+**#1 — wrong WHY in three comments.** Verified against `node_modules/obsidian/obsidian.d.ts`
+before rewriting (I did not swap one guess for another):
+- `Component.addChild` — *"Adds a child component, loading it if this component is loaded"*.
+  It never unloads. The old *"adding the child can unload it right away"* was simply false and is gone.
+- `MarkdownPostProcessorContext.addChild` — *"if the containerEl of the child is ever removed,
+  the component's unload will be called"*. That is the real trigger, and `containerEl` here is
+  the embed span. Both boundedness comments (`src/foldableEmbedMark.ts`,
+  `FoldableEmbedsPostProcessor.liveMarks`) now state it, and say plainly that it does NOT fire on
+  plugin disable (nothing removes the span) — which is what `teardown()` is for.
+- `ctx.addChild(mark)` is still the last statement, but the comment now says the ordering is
+  **not** load-bearing (it just hands over a fully wired mark) instead of inventing a reason.
+
+**#2 — AC3 holds only after REOPENING the note.** Recorded in three places, none of them
+overstating: `CLAUDE.md` (a "KNOWN LIMITATION, measured" sub-bullet under `foldableEmbedMark.ts`,
+including the contrast with Live Preview's top-level embeds, which `registerEditorExtension`
+rebuilds immediately), a note on the open ticket (`nid_1ngosntduq5baizn9b7056h34_e`, together
+with the part-3 rejection rationale so it is not re-fixed later), and a new follow-up ticket
+`nid_o44oqs41s0z21xttblyk513v7_e` ("adopt already-rendered embeds on plugin load"). The e2e
+comment at the navigate-away-and-back step was already accurate and was left alone.
+Also done, as the reviewer asked: a cross-reference note on the closed ticket
+`nid_tto6kyjdm8dsi86mvvnqey2sh_e` so it no longer reads as contradicting the code.
+
+### OPTIONAL — ticketed rather than done here
+
+Per the iteration's comment-only scope, each of these is a code change and would have forced a
+full e2e re-run; all are filed with the reproduction and the suggested fix, none are dropped:
+- **#4** unscoped chevron query in `EmbedFoldDom.unmark` → `nid_5w4yyxmghxg4zteq5xjmdrxd9_e`
+  (real hardening now that nested embeds are marked; safe today only by document order).
+- **#3** no cross-mode double-wiring net → `nid_afu1pcd19esc3v9i2xckicrtq_e` (latent, unmeasured;
+  the ticket says to look for a failing case FIRST and close as WONTFIX if none exists).
+- **#8** disable racing `onload`'s `await settings.load()` → `nid_9bvqz2a3rzved4u2pci21tyfr_e`.
+- **#6** count-0 assertions that could fail at the wrong line → `nid_856xzuo22pkposozpsvbkd8x5_e`.
+
+### OPTIONAL — REJECTED
+
+- **#5 (DRY: merge `liveMarks` + `wiredEmbeds` into one `Map`)** — rejected: the pair is added and
+  removed in exactly one place each, and merging them changes `WiredElements` from a WeakSet to a
+  strongly-retaining Map for a two-line saving. Not worth touching working teardown code.
+- **#7 (embed span detached and re-attached without a re-render loses its marks)** — nothing to do:
+  the reviewer filed it as "watch", it is unobserved, and the failure mode (no folding until the
+  next render) is the plugin's documented rule, not a leak.
+
+### Readiness
+
+**READY TO SHIP.** No code-correctness blocker was raised; both MUST-FIX items are addressed and
+verified against the type definitions. The one thing still needing the human's word is
+acceptance of the AC3 ship-state (nested embeds regain folding on the next render, i.e. after
+reopening the note) before the ticket is closed.
+
 ## Open questions / possible follow-ups
 
 1. Want ticket part 3 anyway (see deviation above)? My recommendation: no.

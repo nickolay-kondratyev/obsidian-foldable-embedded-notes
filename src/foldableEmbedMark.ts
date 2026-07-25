@@ -14,11 +14,15 @@ export type OnMarkUnloaded = (mark: FoldableEmbedMark) => void;
  * plugin leaves a stray chevron behind and keeps folding through a listener nothing can
  * reach any more.
  *
- * It is a `MarkdownRenderChild` so Obsidian unloads it with whatever rendered the embed
- * (section re-render, widget rebuild), which keeps the owner's registry from growing and
- * lets the SAME reused element be wired again afterwards. That covers everything EXCEPT
- * plugin unload — Obsidian does not unload its own render components when a plugin is
- * disabled — which is why the owner also unloads every live mark itself.
+ * It is a `MarkdownRenderChild` handed to `MarkdownPostProcessorContext.addChild`, whose
+ * documented unload trigger is the DOM: "if the containerEl of the child is ever removed,
+ * the component's unload will be called". `containerEl` here is the embed span itself, so a
+ * re-render that replaces that span takes its mark with it — which keeps the owner's
+ * registry bounded and lets the SAME reused element be wired again afterwards.
+ *
+ * That trigger does NOT cover plugin unload: disabling the plugin leaves Obsidian's DOM
+ * exactly where it is, so nothing removes the span and nothing unloads this mark (MEASURED
+ * on 1.12.7 — see the owner's `teardown`, which unloads every live mark itself).
  */
 export class FoldableEmbedMark extends MarkdownRenderChild {
 	/** One abort for every listener added under this mark. */

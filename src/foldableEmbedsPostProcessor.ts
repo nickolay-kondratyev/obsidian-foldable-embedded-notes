@@ -28,8 +28,9 @@ export class FoldableEmbedsPostProcessor {
 	private readonly liveObservers = new Set<MutationObserver>();
 	/**
 	 * Embeds this instance has made foldable and not yet given up. Strong references on
-	 * purpose — {@link teardown} has to reach them — and bounded by every mark removing
-	 * itself here as soon as Obsidian unloads whatever rendered it.
+	 * purpose — {@link teardown} has to reach them — and bounded by the live DOM: a mark's
+	 * `containerEl` IS its embed span, and `MarkdownPostProcessorContext.addChild` documents
+	 * that removing the `containerEl` unloads the child, which calls {@link forget}.
 	 */
 	private readonly liveMarks = new Set<FoldableEmbedMark>();
 	private readonly wiredEmbeds = new WiredElements();
@@ -111,8 +112,10 @@ export class FoldableEmbedsPostProcessor {
 			mark.listenerOptions,
 		);
 
-		// LAST: adding the child can unload it right away (the rendering component may already
-		// be gone), and that unload must find everything above in place to undo it.
+		// Hands this mark's lifetime to the renderer: per `MarkdownPostProcessorContext.addChild`
+		// the mark is unloaded once its `containerEl` — this embed span — leaves the DOM. Last
+		// statement only so that what is handed over is a FULLY wired mark; `addChild` itself
+		// never unloads (`Component.addChild` only ever loads), so the order is not load-bearing.
 		ctx.addChild(mark);
 	}
 
