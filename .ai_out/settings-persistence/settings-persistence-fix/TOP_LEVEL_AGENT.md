@@ -6,10 +6,10 @@ Feature dir: .ai_out/settings-persistence/settings-persistence-fix/
 
 ## Flow (straightforward-flow)
 - [x] EXPLORATION (Explore, sonnet) -> EXPLORATION_PUBLIC.md
-- [ ] IMPLEMENTATION_WITH_SELF_PLAN -> IMPLEMENTATION_WITH_SELF_PLAN__PUBLIC.md
-- [ ] IMPLEMENTATION_REVIEW -> IMPLEMENTATION_REVIEW__PUBLIC.md
-- [ ] IMPLEMENTATION_ITERATION -> IMPLEMENTATION_ITERATION__PUBLIC.md
-- [ ] change_log entry + ticket close (TOP_LEVEL_AGENT only)
+- [x] IMPLEMENTATION_WITH_SELF_PLAN -> IMPLEMENTATION_WITH_SELF_PLAN__PUBLIC.md
+- [x] IMPLEMENTATION_REVIEW -> IMPLEMENTATION_REVIEW__PUBLIC.md
+- [x] IMPLEMENTATION_ITERATION -> IMPLEMENTATION_ITERATION__PUBLIC.md
+- [x] change_log entry + ticket close (TOP_LEVEL_AGENT only)
 
 ## Scope (from ticket)
 1. Serialize saves in the store (chained promise), await so failures still surface to the settings tab Notice.
