@@ -24,6 +24,8 @@ const SIBLING_NOTE_PATH = "sibling.md";
 const NEGATIVE_NOTE_PATH = "marker-negative.md";
 /** Dash glued to INLINE MARKUP: end of text node, but not end of line. */
 const INLINE_MARKUP_NOTE_PATH = "marker-inline-markup.md";
+/** Marker on a SOFT-broken line: the line ends at a `<br>`, not at the block. */
+const SOFT_BREAK_NOTE_PATH = "marker-soft-break.md";
 /** Embeds the SAME note twice (independent fold state). */
 const TWINS_NOTE_PATH = "twins.md";
 /** Embeds heading- and block-ref marker variants. */
@@ -46,6 +48,9 @@ test.beforeAll(async () => {
 			// element, so the dash ends its own text node without ending the line.
 			[INLINE_MARKUP_NOTE_PATH]:
 				"# Inline markup\n\n![[child]]-**bold** tail\n\n![[child]]- tail\n",
+			// Soft line break: the marker ends its LINE while more text follows in the
+			// same paragraph, so `<br>` — not the block end — is what terminates it.
+			[SOFT_BREAK_NOTE_PATH]: "# Soft break\n\n![[child]]-\nnext line\n",
 			// Same note embedded twice — each occurrence must fold independently.
 			[TWINS_NOTE_PATH]: "# Twins\n\n![[child]]\n\n![[child]]\n",
 			// Heading- and block-ref marker variants of a note carrying both refs.
@@ -161,9 +166,27 @@ test("strict-marker negative `![[child]]-**bold**` stays unfolded with the dash 
 
 test("`![[child]]- tail` still folds, keeping the text after the marker", async () => {
 	// The whitespace branch of the marker parse, which the end-of-line rule must not narrow.
+	// Same note as the test above — opened explicitly so this test can also stand alone.
+	await harness.openFile(INLINE_MARKUP_NOTE_PATH);
+	await harness.setMarkdownViewMode("preview");
+	await expect(foldableEmbeds().nth(1)).toBeAttached();
+
 	const embed = foldableEmbeds().nth(1);
 	await expectFolded(embed, true);
 	expect(await nextSiblingText(embed)).toBe(" tail");
+});
+
+test("`![[child]]-` before a SOFT line break still folds", async () => {
+	// The `<br>` branch of the end-of-line rule: text follows in the same paragraph, so
+	// the marker's text node is NOT the last one — only the `<br>` ends the line.
+	await harness.openFile(SOFT_BREAK_NOTE_PATH);
+	await harness.setMarkdownViewMode("preview");
+
+	const embed = foldableEmbeds().first();
+	await expectFolded(embed, true);
+	// Pin the DOM shape this case is about: dash stripped, and a <br> follows.
+	expect(await nextSiblingText(embed)).toBe("");
+	await expect(embed.locator("xpath=following-sibling::br[1]")).toBeAttached();
 });
 
 test("two embeds of the SAME note fold independently", async () => {

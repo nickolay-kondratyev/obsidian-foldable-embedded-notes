@@ -50,6 +50,31 @@ Ticket: `_tickets/reading-mode-a-dash-glued-to-inline-markup-x-bold-wrongly-arms
   hidden, no visible dash `` and the heading/block-ref marker test; plus the new
   `![[child]]- tail` case.
 
+## Review response (iteration on `IMPLEMENTATION_REVIEW__PUBLIC.md`)
+
+| Finding | Verdict | Rationale |
+|---|---|---|
+| SF-1 `instanceof HTMLBRElement` (new lint warning + cross-realm) | **INCORPORATED** | Reviewer is right on both counts. Now `next.instanceOf(HTMLBRElement)`; lint is back to the ONE pre-existing warning (`prefer-setting-definitions`). WHY documented at the call site. |
+| SF-2 `<br>` branch uncovered | **INCORPORATED** | Confirmed by measurement, not assumed: with the clause removed the new test FAILS (see evidence). New fixture `marker-soft-break.md` + test pinning the DOM shape. |
+| N-1 doc overclaims for `**![[x]]-** tail` | **INCORPORATED (wording only)** | Fixed the WORDING, not the hole: `isEndOfLine`'s doc and CLAUDE.md now say "nothing follows it in its PARENT element" plus an explicit KNOWN LIMITATION. Chasing the wrapped case needs ancestor walking for a rare shape — 80/20 says no; noted as a follow-up. |
+| N-2 implicit test coupling | **INCORPORATED** | One-line `openFile` + `setMarkdownViewMode` in the `- tail` test; it no longer depends on the previous test's navigation. |
+| N-3 cross-mode divergence (`![[x]]- tail` folds in reading mode, not LP) | **REJECTED here** | Pre-existing product question, not this ticket's bug; deciding it would change user-visible behaviour in one mode without alignment. Handed up as a follow-up ticket candidate. |
+
+Also handed up as a follow-up candidate: `` ![[x]]-`code` `` is fixed by this code path and
+was verified by the reviewer, but has no dedicated e2e (the `<strong>` case pins the same DOM shape).
+
+### Iteration test evidence (real exits)
+
+- Branch-coverage proof: with `|| next.instanceOf(HTMLBRElement)` replaced by nothing,
+  `npm run test:e2e -- e2e/foldable-embeds.e2e.ts` → **EXIT=1**, `1 failed, 8 passed`; the
+  failure is exactly the new soft-break test (`Received string: "... fen-embed"`, i.e. NOT
+  folded). Log `.tmp/iter-e2e-noBrBranch.log`. Clause restored afterwards.
+- `npm run lint` **EXIT=0** — 0 errors, **1 warning**, the pre-existing
+  `foldableEmbedsSettingTab.ts` one; the warning this change had introduced is GONE
+  (`.tmp/iter-lint.log`).
+- `npm run build` **EXIT=0** (`.tmp/iter-build.log`).
+- `npm run test:e2e` (FULL suite) **EXIT=0** — **46 passed** (`.tmp/iter-e2e-full.log`).
+
 ## Deliberately NOT done
 
 - No unit-test framework introduced (repo has none; out of scope per the task).

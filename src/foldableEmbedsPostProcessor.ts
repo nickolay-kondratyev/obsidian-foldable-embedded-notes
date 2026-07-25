@@ -162,12 +162,19 @@ export class FoldableEmbedsPostProcessor {
 	}
 
 	/**
-	 * Whether nothing more is RENDERED on this node's line: it is the last inline node of
-	 * its block, or a `<br>` (Obsidian's rendering of a soft line break) comes next.
+	 * Whether nothing more is RENDERED after this node inside its PARENT element: nothing
+	 * follows it, or a `<br>` (Obsidian's rendering of a soft line break) does.
+	 *
+	 * KNOWN LIMITATION: only the node's own siblings are inspected, so an embed wrapped in
+	 * inline markup (`**![[x]]-** tail`) still counts as end of line and loses its dash.
+	 * Pre-existing, rare, and cheap only at the cost of walking ancestors — left alone (80/20).
+	 *
+	 * `Node.instanceOf` (obsidian) rather than `instanceof`: cross-window safe, so a popout
+	 * window's `<br>` — built from a DIFFERENT realm's constructor — is still recognised.
 	 */
 	private isEndOfLine(node: Node): boolean {
 		const next = node.nextSibling;
-		return next === null || next instanceof HTMLBRElement;
+		return next === null || next.instanceOf(HTMLBRElement);
 	}
 
 	/**

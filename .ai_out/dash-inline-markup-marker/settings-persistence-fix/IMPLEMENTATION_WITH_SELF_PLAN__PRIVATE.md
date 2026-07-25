@@ -1,9 +1,10 @@
 # Private notes (rehydration)
 
-State: DONE and committed on branch `settings-persistence-fix`. Ticket left `in_progress`,
-no change_log entry (both owned by TOP_LEVEL_AGENT).
+State: DONE — implementation + REVIEW ITERATION both committed on branch
+`settings-persistence-fix`. Ticket left `in_progress`, no change_log entry (both owned by
+TOP_LEVEL_AGENT). Nothing outstanding.
 
-## Exact code shape now
+## Exact code shape now (post-iteration)
 
 `src/foldableEmbedsPostProcessor.ts`:
 ```ts
@@ -11,10 +12,22 @@ const followedByWhitespaceOrEol = /^\s/.test(afterMarker) || (afterMarker === ""
 ...
 private isEndOfLine(node: Node): boolean {
 	const next = node.nextSibling;
-	return next === null || next instanceof HTMLBRElement;
+	return next === null || next.instanceOf(HTMLBRElement);
 }
 ```
 Order matters only for readability; the two branches are disjoint.
+`instanceOf` (obsidian's `Node` augmentation) NOT `instanceof`: repo lint rule
+`obsidianmd/prefer-instanceof` + real cross-realm popout hazard the reviewer measured.
+
+## Iteration facts
+
+- e2e count 45 → 46 (new soft-break test). Suite still ~7s.
+- MUTATION-PROVEN: delete `|| next.instanceOf(HTMLBRElement)` → the soft-break test fails
+  (embed unfolded). Redo with `cp src/foldableEmbedsPostProcessor.ts .tmp/pp.bak` first.
+- Rejected N-3 (reading-mode vs LP `![[x]]- tail` divergence) as out of scope; 3 follow-up
+  candidates listed in `IMPLEMENTATION_ITERATION__PUBLIC.md`.
+- Lint baseline for this repo: 1 warning (`prefer-setting-definitions`). Any second warning
+  is NEW and must be called out.
 
 ## Facts measured in this session (real Obsidian 1.12.7, e2e)
 
