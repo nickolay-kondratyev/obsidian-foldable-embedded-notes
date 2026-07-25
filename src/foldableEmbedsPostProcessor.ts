@@ -86,7 +86,13 @@ export class FoldableEmbedsPostProcessor {
 			return;
 		}
 		const hasFoldMarker = this.stripFoldMarker(embed);
-		const key = this.keys.keyFor(this.occurrenceOf(embed, ctx, sectionEl, indexWithinSection));
+		const foldKey = this.keys.keyFor(this.occurrenceOf(embed, ctx, sectionEl, indexWithinSection));
+		if (foldKey.superseded !== null) {
+			// This render can identify the embed better than an earlier one could; carry over
+			// whatever the user recorded back then (see FoldStateStore.adoptRecordingOf).
+			this.store.adoptRecordingOf(foldKey.superseded, foldKey.current);
+		}
+		const key = foldKey.current;
 		const folded = this.store.get(key) ?? foldedByDefault(this.readSettings(), hasFoldMarker);
 
 		const mark = new FoldableEmbedMark(embed, (unloaded) => this.forget(unloaded));

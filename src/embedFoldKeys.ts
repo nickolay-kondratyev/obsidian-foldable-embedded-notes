@@ -21,6 +21,24 @@ export interface EmbedOccurrence {
 	readonly renderedSectionText: string;
 }
 
+/**
+ * How one embed is identified this render, and what it may have been identified by before.
+ *
+ * Two fields because the identity is only as good as the metadata cache behind it: until the
+ * vault index answers, an embed can only be keyed by POSITION, and the fold the user made in
+ * that window is recorded under that weaker key. {@link superseded} is how the first render
+ * that CAN derive the occurrence key reclaims it.
+ */
+export interface EmbedFoldKey {
+	/** The key this embed is recorded under from now on. */
+	readonly current: string;
+	/**
+	 * The positional key an EARLIER render of this same embed would have used while the
+	 * metadata cache was still cold — null when {@link current} IS that positional key.
+	 */
+	readonly superseded: string | null;
+}
+
 /** One embed as the metadata cache sees it, reduced to what the key needs. */
 interface CachedOccurrence {
 	/** `EmbedCache.link`: the link target as parsed (`a`, `a#heading`, `a#^block`). */
@@ -46,43 +64,57 @@ interface CachedOccurrence {
  * it), never by joining the DOM `src` against `EmbedCache.link` — those two strings are not
  * measured to agree for aliased/subpath links, and the join is not needed.
  *
+ * A COLD cache (MEASURED on Obsidian 1.12.7: for the first render(s) after launch the vault
+ * index is not built yet and `getCache` answers nothing) therefore cannot produce this key at
+ * all, and those embeds fall back to the positional key below. So that a fold made in that
+ * window is not simply LOST — it would be, and the line key this replaces kept it — every
+ * occurrence key also reports the positional key it {@link EmbedFoldKey.superseded}, and the
+ * first render that can derive an occurrence key takes that recording over.
+ *
  * WHAT IT STILL DOES NOT SURVIVE, honestly:
  * - Deleting an embed makes the next embed of the SAME link inherit its ordinal, and its fold
- *   (ticket nid_z4jq8me8mhstojozeua8fufdr_e; the line key had the same flaw). Fixing that needs
- *   per-file invalidation, which the `sourcePath::` prefix leaves room for.
- * - A COLD cache. MEASURED on Obsidian 1.12.7: for the first render(s) after launch the vault
- *   index is not built yet and `getCache` answers nothing, so those embeds get the fallback key
- *   below — and a fold made in that window is dropped by the next render, which keys the same
- *   embed by occurrence. Narrow (app start only) and strictly less lossy than the line key it
- *   replaces, so it is documented rather than papered over with a wait.
+ *   (ticket nid_z4jq8me8mhstojozeua8fufdr_e). The line key had the same FLAW but not the same
+ *   frequency: it handed the fold over only when the survivor happened to land on the deleted
+ *   embed's line, whereas an ordinal is inherited after a deletion ANYWHERE in the note.
+ *   Fixing it needs per-file invalidation, which the `sourcePath::` prefix leaves room for.
+ * - An edit made DURING the cold window, before the takeover above has run: the positional key
+ *   then denotes whatever embed now sits on that line, so the fold can land on the wrong one —
+ *   exactly what the line key did unconditionally, now confined to app start.
  * - A STALE cache (it re-parses asynchronously after an edit) can make the line window select
  *   the wrong entry — misattributing exactly as the line key did — or none, which degrades to
  *   the fallback. NOT observed for edit-then-reopen: the e2e's reopen-through-another-file
  *   re-render keys both embeds by occurrence and both folds land on the right embed.
- * - Nested embeds still share ONE key per host (ticket nid_zqaxj18jbxwnazzz8aeggz91u_e): the
- *   occurrence is computed in the CHILD note's coordinates, identically for every host.
+ * - Nested embeds still share ONE key per host (ticket nid_zqaxj18jbxwnazzz8aeggz91u_e). The
+ *   mechanism is UNMEASURED: `ctx.getSectionInfo` is expected to return null outside a
+ *   top-level markdown view, in which case such an embed never reaches the occurrence path and
+ *   takes the `S<hash>` fallback — which is per-host-section, hence one shared key either way.
  *
  * Key SHAPE: `sourcePath::<locator>::…`, an opaque string whose `sourcePath` prefix is
  * parseable (per-file invalidation later) and whose locator field says which derivation
  * produced it, so occurrence keys and fallback keys can never collide.
  */
 export class EmbedFoldKeys {
-	/** Locator field marking an occurrence-derived key; the fallbacks use `L…`/`S…`. */
+	/** Locator field of an occurrence-derived key. */
 	private static readonly OCCURRENCE_LOCATOR = "occ";
+	/** Locator prefix of a fallback key placed by SOURCE LINE. */
+	private static readonly LINE_LOCATOR = "L";
+	/** Locator prefix of a fallback key placed by hashed section text (no line known). */
+	private static readonly SECTION_HASH_LOCATOR = "S";
 
 	constructor(private readonly readEmbeds: ReadEmbeds) {}
 
-	keyFor(occurrence: EmbedOccurrence): string {
+	keyFor(occurrence: EmbedOccurrence): EmbedFoldKey {
 		const cached = this.cachedOccurrenceOf(occurrence);
 		if (cached === null) {
-			return this.positionalFallbackKey(occurrence);
+			return { current: this.positionalFallbackKey(occurrence), superseded: null };
 		}
-		return [
+		const current = [
 			occurrence.sourcePath,
 			EmbedFoldKeys.OCCURRENCE_LOCATOR,
 			cached.link,
 			`#${cached.ordinal}`,
 		].join("::");
+		return { current, superseded: this.positionalFallbackKey(occurrence) };
 	}
 
 	/**
@@ -135,7 +167,10 @@ export class EmbedFoldKeys {
 	}
 
 	/**
-	 * Pre-occurrence key, kept for the cases the metadata cache cannot answer.
+	 * Pre-occurrence key: where an embed is recorded when the metadata cache cannot answer,
+	 * and — for an embed that HAS an occurrence key — where an earlier cold-cache render of
+	 * the very same embed would have recorded it. It is a pure function of what this render
+	 * sees, so those two uses agree exactly as long as nothing was edited in between.
 	 *
 	 * It is honestly WEAK and only ever better than nothing: `L<line>` is reassigned by any
 	 * edit above (the very bug above), and `S<hash>` hashes the section's RENDERED text —
@@ -145,7 +180,9 @@ export class EmbedFoldKeys {
 	private positionalFallbackKey(occurrence: EmbedOccurrence): string {
 		const lineStart = occurrence.section?.lineStart;
 		const locator =
-			lineStart !== undefined ? `L${lineStart}` : `S${this.hash(occurrence.renderedSectionText)}`;
+			lineStart !== undefined
+				? `${EmbedFoldKeys.LINE_LOCATOR}${lineStart}`
+				: `${EmbedFoldKeys.SECTION_HASH_LOCATOR}${this.hash(occurrence.renderedSectionText)}`;
 		return `${occurrence.sourcePath}::${locator}::${occurrence.src}::#${occurrence.indexWithinSection}`;
 	}
 

@@ -58,10 +58,6 @@ export interface ObsidianApp {
 	readonly commands: {
 		executeCommandById(id: string): boolean;
 	};
-	readonly metadataCache: {
-		/** Null until Obsidian has indexed that file — see `ObsidianHarness.openFile`. */
-		getCache(path: string): unknown | null;
-	};
 	readonly plugins: {
 		readonly plugins: Record<string, unknown>;
 		readonly enabledPlugins: Set<string>;

@@ -13,8 +13,10 @@ import { captureElement, expectFreshElement } from "./reRenderGuard";
  * the two failure modes an edit above an embed can produce are pinned here:
  *   1. LOSS          — the folded embed comes back UNFOLDED (`rm-shift.md`).
  *   2. MISATTRIBUTION — a DIFFERENT, untouched embed comes back folded (`rm-twin-shift.md`).
+ * A third case pins the design choice behind the identity: the ordinal is counted PER LINK, so
+ * an unrelated embed inserted above (`rm-unrelated.md`) shifts nothing.
  *
- * Own Obsidian instance and own fixtures: both tests MUTATE their note, and the convention
+ * Own Obsidian instance and own fixtures: every test MUTATES its note, and the convention
  * for destructive edits in this suite is a fixture nobody else reads.
  *
  * Each edit is made in EDITING mode (the only place `editor.replaceRange` exists) and is then
@@ -28,6 +30,8 @@ test.describe.configure({ mode: "serial" });
 const SHIFT_NOTE_PATH = "rm-shift.md";
 /** Two embeds of the SAME note; the heading above them is deleted (misattribution case). */
 const TWIN_NOTE_PATH = "rm-twin-shift.md";
+/** ONE embed; an embed of a DIFFERENT note is later inserted above it (per-link ordinal case). */
+const UNRELATED_NOTE_PATH = "rm-unrelated.md";
 /** Embed-free detour note, so reopening really rebuilds the note under test. */
 const DETOUR_NOTE_PATH = "rm-detour.md";
 const CHILD_A_PATH = "rm-a.md";
@@ -54,6 +58,9 @@ test.beforeAll(async () => {
 			// Identical `src`: the shape in which a line-keyed store MISATTRIBUTES, because
 			// after the deletion the second embed sits on the first one's old line.
 			[TWIN_NOTE_PATH]: `# ${TWIN_HEADING}\n\n![[rm-a]]\n\n![[rm-a]]\n`,
+			// Starts with a single embed; the test inserts `![[rm-b]]` ABOVE it, which moves
+			// the folded embed's LINE without changing its ordinal among `rm-a` embeds.
+			[UNRELATED_NOTE_PATH]: `# Unrelated\n\n![[rm-a]]\n`,
 			[DETOUR_NOTE_PATH]: "# Detour\n\nA note with no embeds at all.\n",
 		},
 	});
@@ -74,30 +81,30 @@ function foldableEmbeds(): Locator {
 }
 
 /**
- * Waits until BOTH embeds of the note under test are fully wired.
+ * Waits until all `expected` embeds of the note under test are fully wired.
  *
  * The chevron is injected in the same synchronous block that applies the fold class, so a
  * chevron on the LAST embed means every fold projection of this render has already happened
  * — the settled barrier a "this one is NOT folded" assertion needs (that assertion retries
  * until it passes, so on its own it would be green simply for being early).
  */
-async function waitForBothEmbedsWired(): Promise<void> {
-	await expect(foldableEmbeds()).toHaveCount(2);
-	await expect(foldableEmbeds().nth(1).locator(".fen-collapse-icon")).toBeAttached();
+async function waitForEmbedsWired(expected: number): Promise<void> {
+	await expect(foldableEmbeds()).toHaveCount(expected);
+	await expect(foldableEmbeds().nth(expected - 1).locator(".fen-collapse-icon")).toBeAttached();
 }
 
-/** Opens `path` in reading mode with both its embeds wired. */
-async function openInReadingMode(path: string): Promise<void> {
+/** Opens `path` in reading mode with all `embedCount` of its embeds wired. */
+async function openInReadingMode(path: string, embedCount = 2): Promise<void> {
 	await harness.openFile(path);
 	await harness.setMarkdownViewMode("preview");
-	await waitForBothEmbedsWired();
+	await waitForEmbedsWired(embedCount);
 }
 
 /** Re-renders `path` from scratch (detour through an unrelated note) and waits for its embeds. */
-async function reRender(path: string): Promise<void> {
+async function reRender(path: string, embedCount = 2): Promise<void> {
 	await harness.reopenThroughOtherFile(path, DETOUR_NOTE_PATH);
 	await harness.setMarkdownViewMode("preview");
-	await waitForBothEmbedsWired();
+	await waitForEmbedsWired(embedCount);
 }
 
 /** A heading of the HOST note (embedded children render headings of their own). */
@@ -150,4 +157,25 @@ test("deleting the heading ABOVE two same-note embeds does not move the fold to 
 	// user never touched — is still unfolded.
 	await expectFolded(foldableEmbeds().nth(0), true);
 	await expectFolded(foldableEmbeds().nth(1), false);
+});
+
+test("inserting an UNRELATED embed above a folded one keeps the fold on the original", async () => {
+	await openInReadingMode(UNRELATED_NOTE_PATH, 1);
+
+	// GIVEN: the note's only embed (`![[rm-a]]`) is folded.
+	await foldableEmbeds().nth(0).locator(".markdown-embed-title").click();
+	await expectFolded(foldableEmbeds().nth(0), true);
+	const foldedBeforeEdit = await captureElement(foldableEmbeds().nth(0));
+
+	// WHEN: an embed of a DIFFERENT note is inserted above it — the case a GLOBAL embed index
+	// would get wrong, since the folded embed becomes the SECOND embed of the note.
+	await harness.setMarkdownViewMode("source");
+	await harness.replaceRange(`![[rm-b]]\n\n`, { line: 2, ch: 0 });
+	await reRender(UNRELATED_NOTE_PATH, 2);
+	await expectFreshElement(foldedBeforeEdit, foldableEmbeds().nth(1));
+
+	// THEN: the fold is on the embed the user folded — now the second one — and the newly
+	// inserted embed above it is unfolded.
+	await expectFolded(foldableEmbeds().nth(0), false);
+	await expectFolded(foldableEmbeds().nth(1), true);
 });

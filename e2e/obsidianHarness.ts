@@ -199,15 +199,12 @@ export class ObsidianHarness {
 	}
 
 	/**
-	 * Opens a vault file in a MAIN-AREA leaf, then waits until Obsidian has INDEXED it.
+	 * Opens a vault file in a MAIN-AREA leaf.
 	 *
-	 * The wait is app readiness, not a fold assertion: MEASURED on Obsidian 1.12.7, the vault
-	 * index is still being built for the first render or two after launch, so
-	 * `metadataCache.getCache(path)` is null there. The plugin derives an embed's fold identity
-	 * from that cache, so a test racing the index would exercise the plugin's cold-cache
-	 * fallback in some runs and its normal path in others — a flake that says nothing about
-	 * the behaviour under test. (What the cold window means for a USER is documented on
-	 * `EmbedFoldKeys`.)
+	 * Deliberately does NOT wait for the vault INDEX. MEASURED on Obsidian 1.12.7: the index is
+	 * still being built for the first render or two after launch, and the plugin has to keep a
+	 * user's fold across that window (see `EmbedFoldKeys`). Waiting here would hide exactly the
+	 * behaviour the reading-mode fold specs exist to guard.
 	 */
 	async openFile(vaultPath: string): Promise<void> {
 		await this.page.evaluate(async (targetPath) => {
@@ -219,10 +216,6 @@ export class ObsidianHarness {
 			}
 			await app.workspace.getLeaf(false).openFile(file);
 		}, vaultPath);
-		await this.page.waitForFunction(
-			(targetPath) => window.app.metadataCache.getCache(targetPath) !== null,
-			vaultPath,
-		);
 	}
 
 	/**
